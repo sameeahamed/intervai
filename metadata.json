@@ -1,0 +1,11 @@
+{
+  "name": "Remix IntervAI - AI Interview Assessment Platform",
+  "description": "Production-ready AI-powered voice interview assessment platform with adaptive questioning, real-time speech interaction, visual engagement signals, comprehensive scoring, and admin analytics.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

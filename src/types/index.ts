@@ -24,6 +24,7 @@ export interface User {
   targetRole?: string;
   experienceLevel?: ExperienceLevel;
   skills?: string[];
+  resumeText?: string;
   consentCamera?: boolean;
   consentMicrophone?: boolean;
   consentAiEvaluation?: boolean;
@@ -40,6 +41,8 @@ export interface Interview {
   difficulty: DifficultyLevel;
   currentDifficulty?: DifficultyLevel;
   skills: string[];
+  jobDescription?: string;
+  isPractice?: boolean;
   totalQuestions: number;
   durationMinutes: number;
   status: InterviewStatus;
@@ -57,6 +60,7 @@ export interface Question {
   id: string;
   interviewId: string;
   orderIndex: number;
+  parentQuestionId?: string;
   questionText: string;
   spokenLeadIn?: string;
   spokenDialogue?: string;

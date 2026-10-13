@@ -137,37 +137,37 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({ isOpen
             <div className="grid grid-cols-3 gap-2.5">
               <div className="p-3 rounded-xl bg-[#18181c] border border-[#27272a] text-center">
                 <div className="text-lg font-extrabold text-white">
-                  {statusData?.counts?.users ?? '3'}
+                  {statusData?.counts?.users ?? '—'}
                 </div>
                 <div className="text-[11px] text-zinc-400 font-medium">Users</div>
               </div>
               <div className="p-3 rounded-xl bg-[#18181c] border border-[#27272a] text-center">
                 <div className="text-lg font-extrabold text-white">
-                  {statusData?.counts?.interviews ?? '2'}
+                  {statusData?.counts?.interviews ?? '—'}
                 </div>
                 <div className="text-[11px] text-zinc-400 font-medium">Interviews</div>
               </div>
               <div className="p-3 rounded-xl bg-[#18181c] border border-[#27272a] text-center">
                 <div className="text-lg font-extrabold text-white">
-                  {statusData?.counts?.questions ?? '7'}
+                  {statusData?.counts?.questions ?? '—'}
                 </div>
                 <div className="text-[11px] text-zinc-400 font-medium">Questions</div>
               </div>
               <div className="p-3 rounded-xl bg-[#18181c] border border-[#27272a] text-center">
                 <div className="text-lg font-extrabold text-white">
-                  {statusData?.counts?.answers ?? '4'}
+                  {statusData?.counts?.answers ?? '—'}
                 </div>
                 <div className="text-[11px] text-zinc-400 font-medium">Answers</div>
               </div>
               <div className="p-3 rounded-xl bg-[#18181c] border border-[#27272a] text-center">
                 <div className="text-lg font-extrabold text-white">
-                  {statusData?.counts?.evaluations ?? '4'}
+                  {statusData?.counts?.evaluations ?? '—'}
                 </div>
                 <div className="text-[11px] text-zinc-400 font-medium">Evaluations</div>
               </div>
               <div className="p-3 rounded-xl bg-[#18181c] border border-[#27272a] text-center">
                 <div className="text-lg font-extrabold text-white">
-                  {statusData?.counts?.reports ?? '2'}
+                  {statusData?.counts?.reports ?? '—'}
                 </div>
                 <div className="text-[11px] text-zinc-400 font-medium">Reports</div>
               </div>

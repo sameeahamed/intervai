@@ -12,7 +12,8 @@ import {
   VisualEngagementMetrics,
   InterviewTemplate,
   ScoringConfig,
-  AdminAnalytics
+  AdminAnalytics,
+  IntegrityEvent
 } from '../types/index.ts';
 
 const TOKEN_KEY = 'intervai_auth_token';
@@ -237,6 +238,7 @@ class ApiService {
     totalInterviews: number;
     completedCount: number;
     averageOverallScore: number;
+    practiceMinutes: number;
     scoreHistory: any[];
     radarSkills: any[];
     recentCompleted: Interview[];
@@ -246,6 +248,10 @@ class ApiService {
 
   async getAdminAnalytics(): Promise<AdminAnalytics & { users: User[]; interviewsByRole?: Record<string, number> }> {
     return this.request<AdminAnalytics & { users: User[]; interviewsByRole?: Record<string, number> }>('/api/admin/overview');
+  }
+
+  async getIntegrityEvents(): Promise<{ events: IntegrityEvent[] }> {
+    return this.request<{ events: IntegrityEvent[] }>('/api/admin/integrity-events');
   }
 
   // TTS Proxy

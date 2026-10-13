@@ -103,7 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right Action Bar */}
         <div className="flex items-center gap-2.5">
-          {/* Quick 1-Click Role Switcher for Final Year Project Presentation */}
+          {/* Quick 1-Click Presentation Demo Logins (explicit demo action - not automatic) */}
           <div className="hidden lg:flex items-center bg-[#18181c] p-1 rounded-xl border border-[#27272a]">
             <button
               onClick={() => {
@@ -115,9 +115,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   ? 'bg-blue-950/80 text-blue-300 border border-blue-800/60 shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-100'
               }`}
-              title="Switch to Candidate view"
+              title="Demo Login - switch to Candidate view (candidate@intervai.com)"
             >
-              Candidate View
+              Demo Candidate
             </button>
             <button
               onClick={() => {
@@ -129,9 +129,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   ? 'bg-purple-950/80 text-purple-300 border border-purple-800/60 shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-100'
               }`}
-              title="Switch to Admin Dashboard"
+              title="Demo Login - switch to Admin Dashboard (admin@intervai.com)"
             >
-              Admin Portal
+              Demo Admin
             </button>
           </div>
 
@@ -252,7 +252,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }}
                   className="px-3 py-1.5 text-xs font-semibold bg-[#18181c] rounded-lg text-blue-400 border border-[#27272a]"
                 >
-                  Candidate View
+                  Demo Candidate
                 </button>
                 <button
                   onClick={() => {
@@ -262,7 +262,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }}
                   className="px-3 py-1.5 text-xs font-semibold bg-[#18181c] rounded-lg text-purple-400 border border-[#27272a]"
                 >
-                  Admin View
+                  Demo Admin
                 </button>
               </div>
             </>

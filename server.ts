@@ -741,6 +741,14 @@ async function startServer() {
     }
   });
 
+  app.get('/api/admin/integrity-events', requireAdmin, (req, res) => {
+    try {
+      res.json({ events: db.getAllIntegrityEvents() });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to load integrity audit logs.' });
+    }
+  });
+
   app.get('/api/analytics/candidate', requireAuth, (req: AuthenticatedRequest, res) => {
     try {
       const interviews = db.getCandidateInterviews(req.user.id);
@@ -759,21 +767,28 @@ async function startServer() {
         visualScore: i.report?.visualEngagementScore || 0
       }));
 
-      // Calculate aggregated radar skills
+      // Calculate aggregated radar skills from real report scores (0 when none)
       const count = completed.length || 1;
       const radarSkills = [
-        { subject: 'Technical Accuracy', score: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.technicalScore || 0), 0) / count) : 85, fullMark: 100 },
-        { subject: 'Communication', score: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.communicationScore || 0), 0) / count) : 88, fullMark: 100 },
-        { subject: 'Reasoning & Logic', score: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.reasoningScore || 0), 0) / count) : 82, fullMark: 100 },
-        { subject: 'Relevance', score: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.relevanceScore || 0), 0) / count) : 86, fullMark: 100 },
-        { subject: 'Completeness', score: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.completenessScore || 0), 0) / count) : 80, fullMark: 100 },
-        { subject: 'Visual Presence', score: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.visualEngagementScore || 0), 0) / count) : 92, fullMark: 100 }
+        { subject: 'Technical Accuracy', score: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.technicalScore || 0), 0) / count) : 0, fullMark: 100 },
+        { subject: 'Communication', score: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.communicationScore || 0), 0) / count) : 0, fullMark: 100 },
+        { subject: 'Reasoning & Logic', score: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.reasoningScore || 0), 0) / count) : 0, fullMark: 100 },
+        { subject: 'Relevance', score: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.relevanceScore || 0), 0) / count) : 0, fullMark: 100 },
+        { subject: 'Completeness', score: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.completenessScore || 0), 0) / count) : 0, fullMark: 100 },
+        { subject: 'Visual Presence', score: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.visualEngagementScore || 0), 0) / count) : 0, fullMark: 100 }
       ];
+
+      // Real spoken practice time: total audio duration across the candidate's answers
+      const practiceSeconds = interviews.reduce(
+        (acc, i) => acc + db.getAnswersByInterview(i.id).reduce((a, b) => a + (b.audioDurationSeconds || 0), 0),
+        0
+      );
 
       res.json({
         totalInterviews: interviews.length,
         completedCount: completed.length,
         averageOverallScore: completed.length ? Math.round(completed.reduce((a, c) => a + (c.report?.overallScore || 0), 0) / count) : 0,
+        practiceMinutes: Math.round(practiceSeconds / 60),
         scoreHistory,
         radarSkills,
         recentCompleted: completed.slice(0, 5)

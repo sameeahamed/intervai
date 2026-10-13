@@ -1102,6 +1102,16 @@ class Database {
     return this.integrityEvents.get(interviewId) || [];
   }
 
+  public getAllIntegrityEvents(): IntegrityEvent[] {
+    const all: IntegrityEvent[] = [];
+    for (const list of this.integrityEvents.values()) {
+      all.push(...list);
+    }
+    return all.sort((a, b) =>
+      new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    );
+  }
+
   // --------------------------------------------------------------------------
   // Reports
   // --------------------------------------------------------------------------
@@ -1193,6 +1203,20 @@ class Database {
       ? Math.round(totalScores.reduce((a, b) => a + b, 0) / totalScores.length)
       : 0;
 
+    // Average voice assessment duration (minutes) from real timestamps
+    const avgDurationMinutes =
+      completed.length > 0
+        ? Math.round(
+            (completed.reduce((acc, c) => {
+              const start = new Date(c.createdAt).getTime();
+              const end = new Date(c.completedAt || c.createdAt).getTime();
+              return acc + (Number.isFinite(start) && Number.isFinite(end) ? (end - start) / 60000 : 0);
+            }, 0) /
+              completed.length) *
+              10
+          ) / 10
+        : 0;
+
     // Role breakdown
     const roleMap: Record<string, { count: number; totalScore: number }> = {};
     completed.forEach(i => {
@@ -1244,14 +1268,9 @@ class Database {
       totalInterviews: all.length,
       completedInterviews: completed.length,
       totalCandidates: candidates.length,
-      averageScore: avgScore || 85,
-      averageDurationMinutes: 18,
-      roleDistribution: roleDistribution.length > 0 ? roleDistribution : [
-        { role: 'Full-Stack Developer', count: 12, avgScore: 88 },
-        { role: 'Frontend Developer', count: 8, avgScore: 84 },
-        { role: 'Backend Developer', count: 6, avgScore: 86 },
-        { role: 'Cloud Engineer', count: 4, avgScore: 82 }
-      ],
+      averageScore: avgScore,
+      averageDurationMinutes: avgDurationMinutes,
+      roleDistribution,
       difficultyDistribution,
       scoreDistribution: scoreRanges,
       recentInterviews: all.slice(0, 10),

@@ -2,7 +2,7 @@
  * Main Application Root & Router
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext.tsx';
 import { Navbar } from './components/common/Navbar.tsx';
 import { Footer } from './components/common/Footer.tsx';
@@ -22,9 +22,18 @@ function AppContent() {
   const { isAuthenticated, isAdmin } = useAuth();
 
   // Navigation State
-  const [currentView, setCurrentView] = useState<string>('dashboard');
+  // Guests start on the landing page; authenticated users land on the dashboard.
+  const [currentView, setCurrentView] = useState<string>('landing');
   const [activeInterviewId, setActiveInterviewId] = useState<string | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+
+  // When a valid stored session resolves after page load, restore the
+  // pre-authentication dashboard view for returning users.
+  useEffect(() => {
+    if (isAuthenticated && currentView === 'landing') {
+      setCurrentView('dashboard');
+    }
+  }, [isAuthenticated]);
 
   // Modals
   const [privacyModalOpen, setPrivacyModalOpen] = useState<boolean>(false);

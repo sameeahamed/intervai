@@ -28,15 +28,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async function loadCurrentUser() {
       const token = api.getToken();
       if (!token) {
-        // Automatically default to Candidate Demo User for seamless preview experience
-        try {
-          const res = await api.login({ email: 'candidate@intervai.com', password: 'candidate123' });
-          setUser(res.user);
-        } catch {
-          setUser(null);
-        } finally {
-          setIsLoading(false);
-        }
+        // No stored session: stay signed out until the user explicitly logs in.
+        setUser(null);
+        setIsLoading(false);
         return;
       }
 

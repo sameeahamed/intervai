@@ -118,7 +118,7 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
     { subject: 'Reasoning', score: report.reasoningScore, fullMark: 100 },
     { subject: 'Relevance', score: report.relevanceScore, fullMark: 100 },
     { subject: 'Completeness', score: report.completenessScore, fullMark: 100 },
-    { subject: 'Visual Presence', score: report.visualEngagementScore || 90, fullMark: 100 },
+    { subject: 'Visual Presence', score: report.visualEngagementScore ?? 0, fullMark: 100 },
   ];
 
   return (

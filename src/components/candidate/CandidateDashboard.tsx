@@ -75,17 +75,20 @@ export const CandidateDashboard: React.FC<CandidateDashboardProps> = ({
     );
   }
 
-  const radarData = analytics?.radarSkills || [
-    { subject: 'Technical', score: 88, fullMark: 100 },
-    { subject: 'Communication', score: 92, fullMark: 100 },
-    { subject: 'Reasoning', score: 85, fullMark: 100 },
-    { subject: 'Relevance', score: 90, fullMark: 100 },
-    { subject: 'Completeness', score: 84, fullMark: 100 },
-    { subject: 'Visual Presence', score: 94, fullMark: 100 },
-  ];
+  const radarData = analytics?.radarSkills || [];
 
   const scoreHistory = analytics?.scoreHistory || [];
   const recentCompleted: Interview[] = analytics?.recentCompleted || [];
+  const completedCount = analytics?.completedCount ?? 0;
+
+  const topCompetency = radarData.length
+    ? radarData.reduce((best: any, cur: any) => (cur.score > best.score ? cur : best))
+    : null;
+
+  const trendPts =
+    scoreHistory.length >= 2
+      ? (scoreHistory[scoreHistory.length - 1].overallScore ?? 0) - (scoreHistory[0].overallScore ?? 0)
+      : null;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in text-[#e5e7eb]">
@@ -128,11 +131,13 @@ export const CandidateDashboard: React.FC<CandidateDashboardProps> = ({
             </div>
           </div>
           <div className="text-3xl font-black text-white">
-            {analytics?.averageOverallScore || 91}%
+            {analytics?.averageOverallScore ?? 0}%
           </div>
           <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-medium">
             <TrendingUp className="w-3.5 h-3.5" />
-            Top 5th Percentile in {user?.targetRole || 'Engineering'}
+            {completedCount > 0
+              ? `Across ${completedCount} completed evaluation${completedCount > 1 ? 's' : ''}`
+              : 'Complete an evaluation to build your score'}
           </p>
         </div>
 
@@ -145,7 +150,7 @@ export const CandidateDashboard: React.FC<CandidateDashboardProps> = ({
             </div>
           </div>
           <div className="text-3xl font-black text-white">
-            {analytics?.completedCount || 1}
+            {completedCount}
           </div>
           <p className="text-[11px] text-zinc-400">
             Full adaptive voice evaluations
@@ -161,7 +166,7 @@ export const CandidateDashboard: React.FC<CandidateDashboardProps> = ({
             </div>
           </div>
           <div className="text-3xl font-black text-white">
-            35 <span className="text-base font-normal text-zinc-400">mins</span>
+            {analytics?.practiceMinutes ?? 0} <span className="text-base font-normal text-zinc-400">mins</span>
           </div>
           <p className="text-[11px] text-zinc-400">
             Active verbal articulation
@@ -177,10 +182,10 @@ export const CandidateDashboard: React.FC<CandidateDashboardProps> = ({
             </div>
           </div>
           <div className="text-xl font-bold text-white truncate">
-            Communication
+            {topCompetency ? topCompetency.subject : '—'}
           </div>
           <p className="text-[11px] text-zinc-400">
-            93/100 Clarity & Reasoning
+            {topCompetency ? `${topCompetency.score}/100` : 'Complete an evaluation to measure competencies'}
           </p>
         </div>
       </div>
@@ -233,55 +238,55 @@ export const CandidateDashboard: React.FC<CandidateDashboardProps> = ({
               </p>
             </div>
             <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/60">
-              +6% Growth
+              {trendPts === null ? 'No trend data' : `${trendPts >= 0 ? '+' : ''}${trendPts} pts`}
             </span>
           </div>
 
           <div className="w-full h-64 flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={
-                  scoreHistory.length > 0
-                    ? scoreHistory
-                    : [
-                        { date: 'Jan 15', overallScore: 78, technicalScore: 75 },
-                        { date: 'Jan 28', overallScore: 84, technicalScore: 82 },
-                        { date: 'Feb 10', overallScore: 89, technicalScore: 88 },
-                        { date: 'Feb 20', overallScore: 91, technicalScore: 91 },
-                      ]
-                }
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis dataKey="date" stroke="#52525b" tick={{ fill: '#a1a1aa' }} fontSize={11} />
-                <YAxis domain={[50, 100]} stroke="#52525b" tick={{ fill: '#a1a1aa' }} fontSize={11} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#121215',
-                    borderColor: '#27272a',
-                    borderRadius: '12px',
-                    color: '#f4f4f5',
-                    fontSize: '12px',
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="overallScore"
-                  name="Overall Score"
-                  stroke="#3b82f6"
-                  strokeWidth={3}
-                  dot={{ r: 4, fill: '#3b82f6' }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="technicalScore"
-                  name="Technical Accuracy"
-                  stroke="#10b981"
-                  strokeWidth={2}
-                  strokeDasharray="4 4"
-                  dot={{ r: 3, fill: '#10b981' }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {scoreHistory.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={scoreHistory}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                  <XAxis dataKey="date" stroke="#52525b" tick={{ fill: '#a1a1aa' }} fontSize={11} />
+                  <YAxis domain={[0, 100]} stroke="#52525b" tick={{ fill: '#a1a1aa' }} fontSize={11} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#121215',
+                      borderColor: '#27272a',
+                      borderRadius: '12px',
+                      color: '#f4f4f5',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="overallScore"
+                    name="Overall Score"
+                    stroke="#3b82f6"
+                    strokeWidth={3}
+                    dot={{ r: 4, fill: '#3b82f6' }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="technicalScore"
+                    name="Technical Accuracy"
+                    stroke="#10b981"
+                    strokeWidth={2}
+                    strokeDasharray="4 4"
+                    dot={{ r: 3, fill: '#10b981' }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="p-8 text-center bg-[#18181c] rounded-xl border border-dashed border-[#27272a] w-full">
+                <p className="text-sm font-medium text-zinc-300">
+                  No completed evaluations yet.
+                </p>
+                <p className="text-xs text-zinc-400 mt-1">
+                  Complete an adaptive voice assessment to see your score trajectory.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -329,7 +334,7 @@ export const CandidateDashboard: React.FC<CandidateDashboardProps> = ({
               >
                 <div className="flex items-start gap-3.5">
                   <div className="w-10 h-10 rounded-xl bg-blue-950/80 text-blue-400 flex items-center justify-center font-bold text-sm shrink-0 border border-blue-800/60">
-                    {intv.report?.overallScore || 90}%
+                    {intv.report?.overallScore ?? 0}%
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-white">

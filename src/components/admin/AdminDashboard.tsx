@@ -8,7 +8,8 @@ import {
   AdminAnalytics,
   User,
   InterviewTemplate,
-  ScoringConfig
+  ScoringConfig,
+  IntegrityEvent
 } from '../../types/index.ts';
 import {
   Sliders,
@@ -45,6 +46,7 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
   const [analytics, setAnalytics] = useState<(AdminAnalytics & { users: User[] }) | null>(null);
   const [templates, setTemplates] = useState<InterviewTemplate[]>([]);
   const [scoringConfig, setScoringConfig] = useState<ScoringConfig | null>(null);
+  const [auditEvents, setAuditEvents] = useState<IntegrityEvent[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Template creation form state
@@ -69,14 +71,16 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
     async function loadAdminData() {
       try {
         setLoading(true);
-        const [admData, tmplData, scoreData] = await Promise.all([
+        const [admData, tmplData, scoreData, auditData] = await Promise.all([
           api.getAdminAnalytics(),
           api.getTemplates(),
           api.getScoringConfig(),
+          api.getIntegrityEvents(),
         ]);
         setAnalytics(admData);
         setTemplates(tmplData);
         setScoringConfig(scoreData);
+        setAuditEvents(auditData.events || []);
 
         if (scoreData) {
           setTechWeight(scoreData.weightTechnical || 30);
@@ -160,6 +164,11 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
     count: r.count,
   }));
 
+  const completionRate =
+    analytics?.totalInterviews && analytics.totalInterviews > 0
+      ? Math.round(((analytics.completedInterviews || 0) / analytics.totalInterviews) * 100)
+      : null;
+
   const COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4'];
 
   const filteredUsers = (analytics?.users || []).filter(
@@ -225,7 +234,7 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
                 Total Candidates
               </span>
               <div className="text-3xl font-black text-white">
-                {analytics?.totalCandidates || 12}
+                {analytics?.totalCandidates ?? 0}
               </div>
               <p className="text-[11px] text-zinc-500">Registered platform users</p>
             </div>
@@ -235,9 +244,11 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
                 Total Interviews
               </span>
               <div className="text-3xl font-black text-white">
-                {analytics?.totalInterviews || 28}
+                {analytics?.totalInterviews ?? 0}
               </div>
-              <p className="text-[11px] text-emerald-400 font-medium">92% Completion Rate</p>
+              <p className={`text-[11px] font-medium ${completionRate === null ? 'text-zinc-500' : 'text-emerald-400'}`}>
+                {completionRate === null ? 'No interviews yet' : `${completionRate}% Completion Rate`}
+              </p>
             </div>
 
             <div className="p-5 bg-[#121215] border border-[#27272a] rounded-2xl shadow-sm space-y-2">
@@ -245,7 +256,7 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
                 Average Overall Score
               </span>
               <div className="text-3xl font-black text-white">
-                {analytics?.averageScore || 88}%
+                {analytics?.averageScore ?? 0}%
               </div>
               <p className="text-[11px] text-zinc-500">Across all job roles</p>
             </div>
@@ -255,7 +266,7 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
                 Average Duration
               </span>
               <div className="text-3xl font-black text-white">
-                18.4 <span className="text-base font-normal text-zinc-400">mins</span>
+                {analytics?.averageDurationMinutes ?? 0} <span className="text-base font-normal text-zinc-400">mins</span>
               </div>
               <p className="text-[11px] text-zinc-500">Voice assessment interaction</p>
             </div>
@@ -295,32 +306,38 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
                 Interviews Conducted by Job Role
               </h3>
               <div className="w-full h-64 flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={roleDistributionData}
-                      dataKey="count"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    >
-                      {roleDistributionData.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#121215',
-                        borderColor: '#27272a',
-                        borderRadius: '12px',
-                        color: '#fff',
-                        fontSize: '12px',
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                {roleDistributionData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={roleDistributionData}
+                        dataKey="count"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {roleDistributionData.map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#121215',
+                          borderColor: '#27272a',
+                          borderRadius: '12px',
+                          color: '#fff',
+                          fontSize: '12px',
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-sm font-medium text-zinc-400">
+                    No completed interviews by job role yet.
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -650,35 +667,41 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
                 Platform Security & AI Integrity Audit Logs
               </h3>
               <p className="text-xs text-zinc-400">
-                Real-time security log tracking session integrity, API evaluations, and compliance validations
+                Integrity events (tab switches, camera/mic disconnects) recorded during candidate sessions
               </p>
             </div>
             <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-800/60">
-              Integrity System Nominal
+              {auditEvents.length} Integrity Event{auditEvents.length === 1 ? '' : 's'}
             </span>
           </div>
 
-          <div className="space-y-2.5 font-mono text-xs text-zinc-300">
-            {[
-              { time: '10:42:15', event: 'SESSION_START', detail: 'Candidate Alex Rivera initialized voice assessment session.' },
-              { time: '10:42:20', event: 'TTS_SYNTHESIS', detail: 'Generated audio stream for Question 1 using Gemini Voice model.' },
-              { time: '10:44:02', event: 'STT_STREAM', detail: 'Accumulated 142 words candidate spoken answer transcript.' },
-              { time: '10:44:05', event: 'AI_EVALUATION', detail: 'Computed multi-dimensional score (88/100) with exemplar answer.' },
-              { time: '10:45:10', event: 'VISUAL_TELEMETRY', detail: 'Local camera sampling verified stable framing (96% centered).' },
-              { time: '10:50:30', event: 'REPORT_SYNTHESIS', detail: 'Final PDF/CSV candidate assessment report generated and hashed.' },
-            ].map((log, i) => (
-              <div
-                key={i}
-                className="p-3 bg-[#18181c] rounded-xl border border-[#27272a] flex items-start gap-3"
-              >
-                <span className="text-blue-400 font-bold">{log.time}</span>
-                <span className="px-1.5 py-0.5 text-[10px] bg-[#222228] border border-[#33333d] rounded font-semibold text-zinc-200">
-                  {log.event}
-                </span>
-                <span className="text-zinc-300 flex-1">{log.detail}</span>
-              </div>
-            ))}
-          </div>
+          {auditEvents.length === 0 ? (
+            <div className="p-8 text-center bg-[#18181c] rounded-xl border border-dashed border-[#27272a]">
+              <p className="text-sm font-medium text-zinc-300">
+                No integrity events recorded yet.
+              </p>
+              <p className="text-xs text-zinc-400 mt-1">
+                Integrity events appear here as candidates complete interview sessions.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2.5 font-mono text-xs text-zinc-300">
+              {auditEvents.map((ev) => (
+                <div
+                  key={ev.id}
+                  className="p-3 bg-[#18181c] rounded-xl border border-[#27272a] flex items-start gap-3"
+                >
+                  <span className="text-blue-400 font-bold">
+                    {new Date(ev.createdAt).toLocaleTimeString('en-US', { hour12: false })}
+                  </span>
+                  <span className="px-1.5 py-0.5 text-[10px] bg-[#222228] border border-[#33333d] rounded font-semibold text-zinc-200 uppercase">
+                    {ev.eventType}
+                  </span>
+                  <span className="text-zinc-300 flex-1">{ev.details || ev.eventType}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

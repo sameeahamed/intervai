@@ -23,6 +23,7 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
   const [targetRole, setTargetRole] = useState(user?.targetRole || 'Full-Stack Developer');
   const [experienceLevel, setExperienceLevel] = useState(user?.experienceLevel || 'mid');
   const [skills, setSkills] = useState<string[]>(user?.skills || ['React', 'Node.js', 'PostgreSQL']);
+  const [resumeText, setResumeText] = useState<string>(user?.resumeText || '');
   const [newSkill, setNewSkill] = useState('');
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -39,6 +40,7 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
         targetRole,
         experienceLevel,
         skills,
+        resumeText: resumeText.trim(),
       });
       setSuccessMsg('Profile preferences updated successfully!');
       setTimeout(() => setSuccessMsg(null), 3500);
@@ -188,6 +190,29 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
             >
               Add
             </button>
+          </div>
+        </div>
+
+        {/* Resume / Experience Text (Optional) */}
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+            Resume / Experience Summary (Optional)
+          </label>
+          <textarea
+            value={resumeText}
+            onChange={(e) => setResumeText(e.target.value)}
+            rows={6}
+            maxLength={8000}
+            placeholder="Paste your resume or a summary of your experience. Used only to personalize your interview questions."
+            className="w-full px-3.5 py-2.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white resize-y"
+          />
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Stored with your profile. Do not include sensitive personal data you don't want sent to the AI provider.
+            </p>
+            <span className="text-[11px] text-slate-400 dark:text-slate-500 shrink-0 ml-2">
+              {resumeText.length}/8000
+            </span>
           </div>
         </div>
 

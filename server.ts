@@ -56,6 +56,20 @@ function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFuncti
 
 const activePrefetches = new Set<string>();
 
+// Untrusted free-text (resume / job description) normalization: trim, cap length,
+// and return undefined when empty so callers can omit the field entirely.
+const MAX_UNTRUSTED_TEXT_CHARS = 20000;
+function cleanUntrustedText(value: unknown, max: number = MAX_UNTRUSTED_TEXT_CHARS): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.replace(/\r\n/g, '\n').trim();
+  if (!normalized) return undefined;
+  return normalized.length > max ? normalized.slice(0, max) : normalized;
+}
+
+function getCandidateResumeForInterview(interview: Interview): string | undefined {
+  return db.getUserById(interview.candidateId)?.resumeText;
+}
+
 async function prefetchNextQuestion(interviewId: string) {
   if (activePrefetches.has(interviewId)) return;
 
@@ -81,6 +95,7 @@ async function prefetchNextQuestion(interviewId: string) {
       previousAnswers: answers,
       previousEvaluations: evaluations,
       orderIndex: nextOrderIndex,
+      candidateResume: getCandidateResumeForInterview(interview),
     });
 
     const currentQuestions = db.getQuestionsByInterview(interview.id);
@@ -273,7 +288,8 @@ async function startServer() {
         difficulty,
         skills,
         totalQuestions,
-        durationMinutes
+        durationMinutes,
+        jobDescription
       } = req.body;
 
       if (!jobRole || !experienceLevel) {
@@ -281,6 +297,7 @@ async function startServer() {
       }
 
       const interviewId = `int-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const cleanJobDescription = cleanUntrustedText(jobDescription);
       const newInterview: Interview = {
         id: interviewId,
         candidateId: req.user.id,
@@ -294,7 +311,8 @@ async function startServer() {
         totalQuestions: Number(totalQuestions) || 5,
         durationMinutes: Number(durationMinutes) || 20,
         status: 'setup',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        ...(cleanJobDescription ? { jobDescription: cleanJobDescription } : {}),
       };
 
       const created = db.createInterview(newInterview);
@@ -394,7 +412,8 @@ async function startServer() {
         previousQuestions: questions,
         previousAnswers: answers,
         previousEvaluations: evaluations,
-        orderIndex: nextOrderIndex
+        orderIndex: nextOrderIndex,
+        candidateResume: getCandidateResumeForInterview(interview)
       });
 
       const newQuestion: Question = {

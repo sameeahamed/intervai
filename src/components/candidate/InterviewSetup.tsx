@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../../services/api.ts';
 import { VoiceService } from '../../services/voice.ts';
+import { extractSkillsFromText } from '../../utils/personalization.ts';
 import {
   Mic,
   Camera,
@@ -53,6 +54,11 @@ const SKILL_SUGGESTIONS: Record<string, string[]> = {
   'UI/UX Designer': ['Figma', 'User Research', 'Design Systems', 'Usability Testing', 'Wireframing & Prototyping'],
 };
 
+// Flat, de-duplicated vocabulary used for optional job-description skill prefill.
+const SKILL_VOCABULARY: string[] = Array.from(
+  new Set(Object.values(SKILL_SUGGESTIONS).flat())
+);
+
 export const InterviewSetup: React.FC<InterviewSetupProps> = ({
   onInterviewCreated,
   onCancel,
@@ -68,6 +74,7 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
   const [difficulty, setDifficulty] = useState<'adaptive' | 'easy' | 'medium' | 'hard'>('adaptive');
   const [skills, setSkills] = useState<string[]>(['React', 'Node.js', 'PostgreSQL', 'System Design']);
   const [newSkillInput, setNewSkillInput] = useState<string>('');
+  const [jobDescription, setJobDescription] = useState<string>('');
   const [totalQuestions, setTotalQuestions] = useState<number>(5);
   const [durationMinutes, setDurationMinutes] = useState<number>(20);
   const [consentAccepted, setConsentAccepted] = useState<boolean>(true);
@@ -104,6 +111,21 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
 
   const handleRemoveSkill = (skill: string) => {
     setSkills(skills.filter((s) => s !== skill));
+  };
+
+  // Optional prefill: detect known skills from the pasted job description.
+  // The detected values are merged into the editable skills list; the candidate
+  // can still remove or add entries before launching.
+  const handlePrefillFromJd = () => {
+    const detected = extractSkillsFromText(jobDescription, SKILL_VOCABULARY);
+    if (detected.length === 0) return;
+    setSkills((prev) => {
+      const merged = [...prev];
+      detected.forEach((d) => {
+        if (!merged.some((m) => m.toLowerCase() === d.toLowerCase())) merged.push(d);
+      });
+      return merged;
+    });
   };
 
   // Hardware test triggers
@@ -186,6 +208,7 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
         skills,
         totalQuestions,
         durationMinutes,
+        jobDescription: jobDescription.trim() || undefined,
       });
 
       // Start interview session
@@ -416,6 +439,38 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
                   <Plus className="w-3.5 h-3.5" />
                   Add
                 </button>
+              </div>
+            </div>
+
+            {/* Job Description (Optional) */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300">
+                  Job Description / Role Context (Optional)
+                </label>
+                <button
+                  type="button"
+                  onClick={handlePrefillFromJd}
+                  disabled={!jobDescription.trim()}
+                  className="px-3 py-1.5 bg-[#202026] text-zinc-200 hover:bg-[#27272f] text-[11px] font-semibold rounded-lg border border-[#27272a] flex items-center gap-1 transition disabled:opacity-40"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Auto-detect skills
+                </button>
+              </div>
+              <textarea
+                value={jobDescription}
+                onChange={(e) => setJobDescription(e.target.value)}
+                rows={5}
+                maxLength={8000}
+                placeholder="Paste the target job description. Used only to tailor question topics for THIS interview."
+                className="w-full px-3.5 py-2.5 text-xs bg-[#18181c] border border-[#27272a] rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+              />
+              <div className="flex items-center justify-between mt-1">
+                <p className="text-[10px] text-zinc-500">
+                  Treated as untrusted input; not used as instructions. Do not paste sensitive personal data.
+                </p>
+                <span className="text-[10px] text-zinc-500 shrink-0 ml-2">{jobDescription.length}/8000</span>
               </div>
             </div>
 

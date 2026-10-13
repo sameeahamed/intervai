@@ -4,6 +4,7 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
+import { useDialogA11y } from '../../utils/useDialogA11y.ts';
 import {
   X,
   LogIn,
@@ -47,6 +48,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [devResetToken, setDevResetToken] = useState<string | null>(null);
+
+  const dialogRef = useDialogA11y(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -127,13 +130,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in text-[#e5e7eb]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in text-[#e5e7eb]"
+      onClick={onClose}
+    >
       <div
         id="auth-modal-dialog"
-        className="bg-[#121215] border border-[#27272a] rounded-3xl max-w-md w-full shadow-2xl p-6 sm:p-8 relative"
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        className="bg-[#121215] border border-[#27272a] rounded-3xl max-w-md w-full shadow-2xl p-6 sm:p-8 relative focus:outline-none"
       >
         <button
           onClick={onClose}
+          aria-label="Close"
           className="absolute top-5 right-5 p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-[#18181c] transition"
         >
           <X className="w-5 h-5" />
@@ -144,7 +157,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white mx-auto mb-3 shadow-md shadow-blue-500/20">
             <Sparkles className="w-6 h-6" />
           </div>
-          <h3 className="text-xl font-bold text-white">
+          <h3 id="auth-modal-title" className="text-xl font-bold text-white">
             {mode === 'login' && 'Welcome Back to IntervAI'}
             {mode === 'register' && 'Create Candidate Account'}
             {mode === 'forgot' && 'Reset Your Password'}

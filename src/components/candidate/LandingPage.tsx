@@ -25,13 +25,11 @@ import { AudioWaveform } from '../common/AudioWaveform.tsx';
 interface LandingPageProps {
   onStartInterview: () => void;
   onOpenPrivacy: () => void;
-  onOpenAuth: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
   onStartInterview,
   onOpenPrivacy,
-  onOpenAuth,
 }) => {
   const [demoSpeaking, setDemoSpeaking] = useState(false);
   const [faqOpen, setFaqOpen] = useState<number | null>(null);

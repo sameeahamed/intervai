@@ -104,7 +104,6 @@ function AppContent() {
           <LandingPage
             onStartInterview={handleStartSetup}
             onOpenPrivacy={() => setPrivacyModalOpen(true)}
-            onOpenAuth={() => setAuthModalOpen(true)}
           />
         )}
 

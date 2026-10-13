@@ -90,7 +90,7 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
       <div className="max-w-4xl mx-auto px-4 py-20 flex items-center justify-center">
         <div className="text-center space-y-3">
           <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm font-medium text-slate-400">Synthesizing comprehensive AI assessment report...</p>
+          <p className="text-sm font-medium text-zinc-400">Synthesizing comprehensive AI assessment report...</p>
         </div>
       </div>
     );
@@ -99,11 +99,11 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
   if (error || !data) {
     return (
       <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
-        <div className="w-12 h-12 rounded-2xl bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
+        <div className="w-12 h-12 rounded-2xl bg-red-950 text-red-400 flex items-center justify-center mx-auto">
           <AlertCircle className="w-6 h-6" />
         </div>
-        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Report Generation Notice</h3>
-        <p className="text-xs text-slate-500">{error || 'Unable to retrieve report.'}</p>
+        <h3 className="text-lg font-bold text-white">Report Generation Notice</h3>
+        <p className="text-xs text-zinc-400">{error || 'Unable to retrieve report.'}</p>
         <button
           onClick={onBackToDashboard}
           className="px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-xl"
@@ -218,7 +218,7 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
   const speech = computeSpeechAnalytics(answers);
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in print:p-0 text-[#e5e7eb]">
+    <div id="assessment-report" className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in print:p-0 text-[#e5e7eb]">
       {/* 1. TOP HEADER & EXPORT ACTIONS */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#27272a] pb-6 print:hidden">
         <button
@@ -517,7 +517,7 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
 
                 return (
                   <div
-                    className={`border rounded-2xl overflow-hidden transition bg-[#18181c] ${
+                    className={`border rounded-2xl overflow-hidden transition bg-[#18181c] break-inside-avoid ${
                       isNested ? 'border-indigo-900/50' : 'border-[#27272a]'
                     }`}
                   >
@@ -565,9 +565,8 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
                       </div>
                     </button>
 
-                    {/* Expanded Details */}
-                    {isExpanded && (
-                      <div className="p-5 bg-[#121215] border-t border-[#27272a] space-y-4 text-xs">
+                    {/* Expanded Details (always in the DOM so it also prints; hidden on screen when collapsed) */}
+                    <div className={`p-5 bg-[#121215] border-t border-[#27272a] space-y-4 text-xs ${isExpanded ? '' : 'hidden print:block'}`}>
                         {/* Candidate Transcript */}
                         <div className="space-y-1">
                           <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
@@ -603,8 +602,7 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
                         ) : (
                           <p className="text-[11px] text-zinc-400">No evaluation recorded for this response.</p>
                         )}
-                      </div>
-                    )}
+                    </div>
                   </div>
                 );
               };

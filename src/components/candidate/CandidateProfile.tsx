@@ -5,6 +5,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { api } from '../../services/api.ts';
+import { useDialogA11y } from '../../utils/useDialogA11y.ts';
 import {
   User,
   ShieldCheck,
@@ -29,6 +30,8 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [purgeLoading, setPurgeLoading] = useState(false);
+
+  const purgeDialogRef = useDialogA11y(showPurgeModal, () => setShowPurgeModal(false));
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,78 +69,78 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
       {/* Header */}
-      <div className="border-b border-slate-200 dark:border-slate-800 pb-6">
+      <div className="border-b border-[#27272a] pb-6">
         <button
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 transition mb-2"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-white transition mb-2"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Dashboard</span>
         </button>
-        <h1 className="text-2xl font-black text-slate-900 dark:text-white">
+        <h1 className="text-2xl font-black text-white">
           Candidate Profile & Privacy Controls
         </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-xs text-zinc-400">
           Manage your career targets, target skill competencies, and data sovereignty
         </p>
       </div>
 
       {successMsg && (
-        <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2">
+        <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-800/60 text-emerald-300 text-xs flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{successMsg}</span>
         </div>
       )}
 
       {/* Main Form */}
-      <form onSubmit={handleSave} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+      <form onSubmit={handleSave} className="bg-[#121215] border border-[#27272a] rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
               Full Name
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+              className="w-full px-3.5 py-2.5 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
               Email Address
             </label>
             <input
               type="email"
               disabled
               value={user?.email || ''}
-              className="w-full px-3.5 py-2.5 text-sm bg-slate-100 dark:bg-slate-850 border border-slate-300 dark:border-slate-800 rounded-xl text-slate-500 dark:text-slate-400 cursor-not-allowed"
+              className="w-full px-3.5 py-2.5 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-zinc-400 cursor-not-allowed"
             />
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
               Target Job Role
             </label>
             <input
               type="text"
               value={targetRole}
               onChange={(e) => setTargetRole(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+              className="w-full px-3.5 py-2.5 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
               Experience Level
             </label>
             <select
               value={experienceLevel}
                onChange={(e) => setExperienceLevel(e.target.value as any)}
-              className="w-full px-3.5 py-2.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+              className="w-full px-3.5 py-2.5 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white"
             >
               <option value="entry">Entry Level (0-2 yrs)</option>
               <option value="mid">Mid Level (2-5 yrs)</option>
@@ -149,14 +152,14 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
 
         {/* Skills Tag Management */}
         <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+          <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
             Default Profile Skills
           </label>
           <div className="flex flex-wrap gap-2 mb-3">
             {skills.map((s) => (
               <span
                 key={s}
-                className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-medium rounded-full"
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#18181c] text-zinc-200 text-xs font-medium rounded-full"
               >
                 {s}
                 <button
@@ -176,7 +179,7 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
               value={newSkill}
               onChange={(e) => setNewSkill(e.target.value)}
               placeholder="Add skill tag..."
-              className="flex-1 px-3.5 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+              className="flex-1 px-3.5 py-2 text-xs bg-[#18181c] border border-[#27272a] rounded-xl text-white"
             />
             <button
               type="button"
@@ -186,7 +189,7 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
                   setNewSkill('');
                 }
               }}
-              className="px-4 py-2 bg-slate-800 text-slate-200 text-xs font-semibold rounded-xl"
+              className="px-4 py-2 bg-[#202026] text-zinc-200 text-xs font-semibold rounded-xl border border-[#3f3f46] hover:bg-[#27272a] transition"
             >
               Add
             </button>
@@ -195,7 +198,7 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
 
         {/* Resume / Experience Text (Optional) */}
         <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+          <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
             Resume / Experience Summary (Optional)
           </label>
           <textarea
@@ -204,13 +207,13 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
             rows={6}
             maxLength={8000}
             placeholder="Paste your resume or a summary of your experience. Used only to personalize your interview questions."
-            className="w-full px-3.5 py-2.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white resize-y"
+            className="w-full px-3.5 py-2.5 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white resize-y"
           />
           <div className="flex items-center justify-between mt-1">
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            <p className="text-[11px] text-zinc-400">
               Stored with your profile. Do not include sensitive personal data you don't want sent to the AI provider.
             </p>
-            <span className="text-[11px] text-slate-400 dark:text-slate-500 shrink-0 ml-2">
+            <span className="text-[11px] text-zinc-500 shrink-0 ml-2">
               {resumeText.length}/8000
             </span>
           </div>
@@ -229,22 +232,22 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
       </form>
 
       {/* GDPR Data Erasure Zone */}
-      <div className="bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-3xl p-6 sm:p-8 space-y-4">
+      <div className="bg-red-950/20 border border-red-900/40 rounded-3xl p-6 sm:p-8 space-y-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-red-950 text-red-400 flex items-center justify-center">
             <Trash2 className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+            <h3 className="text-sm font-bold text-white">
               Data Privacy & Right to Erasure (GDPR)
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-zinc-400">
               Permanently purge all your interview transcripts, evaluations, and recordings
             </p>
           </div>
         </div>
 
-        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+        <p className="text-xs text-zinc-300 leading-relaxed">
           In compliance with international data privacy laws, you can trigger an irreversible deletion of all interview attempts, audio logs, answers, and visual practice metrics associated with your account.
         </p>
 
@@ -260,19 +263,30 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
 
       {/* Purge Modal */}
       {showPurgeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <h3 className="text-base font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"
+          onClick={() => setShowPurgeModal(false)}
+        >
+          <div
+            ref={purgeDialogRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="purge-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#121215] border border-[#27272a] rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 focus:outline-none"
+          >
+            <h3 id="purge-modal-title" className="text-base font-bold text-red-400 flex items-center gap-2">
               <AlertCircle className="w-5 h-5" />
               Confirm Complete Data Purge
             </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            <p className="text-xs text-zinc-300 leading-relaxed">
               Are you sure? This will delete all your interview history, evaluations, metrics, and reset your score progression. This action cannot be undone.
             </p>
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 onClick={() => setShowPurgeModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+                className="px-4 py-2 text-xs font-semibold text-zinc-300 hover:bg-[#18181c] rounded-xl"
               >
                 Cancel
               </button>

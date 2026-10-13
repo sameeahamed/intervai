@@ -16,6 +16,7 @@ import {
   VisualEngagementMetrics
 } from '../../types/index.ts';
 import { VoiceAvatar } from '../common/VoiceAvatar.tsx';
+import { useDialogA11y } from '../../utils/useDialogA11y.ts';
 import {
   Mic,
   MicOff,
@@ -87,6 +88,10 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   const videoStreamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<any>(null);
+
+  // Exit confirmation is dismissable (Escape / backdrop); the feedback and
+  // practice dialogs intentionally require an explicit action.
+  const exitDialogRef = useDialogA11y(showExitDialog, () => setShowExitDialog(false));
 
   // 1. INITIALIZE INTERVIEW SESSION & SERVICES
   useEffect(() => {
@@ -864,14 +869,21 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
       {/* 3. IMMEDIATE EVALUATION DRAWER / MODAL */}
       {showFeedbackModal && lastEvaluation && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="bg-[#121215] border border-[#27272a] rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl space-y-5 animate-scale-in">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="feedback-modal-title"
+            tabIndex={-1}
+            autoFocus
+            className="bg-[#121215] border border-[#27272a] rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl space-y-5 animate-scale-in focus:outline-none"
+          >
             <div className="flex items-center justify-between border-b border-[#27272a] pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-blue-950/80 text-blue-400 flex items-center justify-center font-black text-lg border border-blue-800/60">
                   {lastEvaluation.overallScore}%
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">
+                  <h3 id="feedback-modal-title" className="text-lg font-bold text-white">
                     Question Assessment
                   </h3>
                   <p className="text-xs text-zinc-400">
@@ -963,13 +975,20 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
       {/* 3b. PRACTICE (UNGRADED) CONFIRMATION MODAL */}
       {showPracticeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="bg-[#121215] border border-amber-800/50 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-5 animate-scale-in">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="practice-modal-title"
+            tabIndex={-1}
+            autoFocus
+            className="bg-[#121215] border border-amber-800/50 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-5 animate-scale-in focus:outline-none"
+          >
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl bg-amber-950/80 text-amber-400 flex items-center justify-center border border-amber-800/60">
                 <RotateCcw className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <h3 id="practice-modal-title" className="text-lg font-bold text-white flex items-center gap-2">
                   Answer Recorded
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 font-semibold border border-amber-800/60">
                     Practice · Ungraded
@@ -1018,9 +1037,20 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
       {/* 4. EXIT CONFIRMATION DIALOG */}
       {showExitDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="bg-[#121215] border border-[#27272a] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-scale-in">
-            <h3 className="text-base font-bold text-white">Exit Interview Session?</h3>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+          onClick={() => setShowExitDialog(false)}
+        >
+          <div
+            ref={exitDialogRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="exit-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#121215] border border-[#27272a] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-scale-in focus:outline-none"
+          >
+            <h3 id="exit-modal-title" className="text-base font-bold text-white">Exit Interview Session?</h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
               Your answered questions and evaluations are preserved. You can resume or view your assessment summary later from your candidate portal.
             </p>

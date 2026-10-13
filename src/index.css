@@ -37,6 +37,24 @@
   background: #3f3f46;
 }
 
+/* Print / PDF: the app uses a fixed dark theme, so force browsers to keep
+   the dark surfaces and light text instead of printing near-white text on
+   white paper. Global navigation and footer are hidden via `print:hidden`. */
+@media print {
+  html,
+  body {
+    background-color: #0a0a0b !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #assessment-report,
+  #assessment-report * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }

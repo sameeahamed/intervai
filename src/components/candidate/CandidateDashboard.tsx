@@ -34,7 +34,7 @@ import {
 } from 'recharts';
 
 interface CandidateDashboardProps {
-  onStartSetup: (templateId?: string) => void;
+  onStartSetup: () => void;
   onViewReport: (interviewId: string) => void;
   onViewHistory: () => void;
 }

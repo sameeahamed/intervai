@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Server, RefreshCw, CheckCircle2, AlertCircle, HardDrive, Layers, Activity, X } from 'lucide-react';
 import { api } from '../../services/api.ts';
+import { useDialogA11y } from '../../utils/useDialogA11y.ts';
 
 interface DatabaseStatusModalProps {
   isOpen: boolean;
@@ -59,11 +60,24 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({ isOpen
     }
   }, [isOpen]);
 
+  const dialogRef = useDialogA11y(isOpen, onClose);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[#121216] border border-[#27272a] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="database-status-title"
+        onClick={(e) => e.stopPropagation()}
+        className="bg-[#121216] border border-[#27272a] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl focus:outline-none"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#27272a] bg-[#18181f]">
           <div className="flex items-center gap-3">
@@ -71,7 +85,7 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({ isOpen
               <Database className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <h2 id="database-status-title" className="text-base font-bold text-white flex items-center gap-2">
                 MongoDB Atlas Database
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/60">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse" />
@@ -83,6 +97,7 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({ isOpen
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-[#27272a] transition"
           >
             <X className="w-5 h-5" />

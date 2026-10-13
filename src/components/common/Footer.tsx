@@ -7,7 +7,7 @@ import { Sparkles, Shield, Cpu, Github, ExternalLink } from 'lucide-react';
 
 export const Footer: React.FC<{ onOpenPrivacy: () => void }> = ({ onOpenPrivacy }) => {
   return (
-    <footer className="w-full bg-[#0a0a0b] border-t border-[#27272a] text-zinc-400 py-10 mt-auto">
+    <footer className="w-full bg-[#0a0a0b] border-t border-[#27272a] text-zinc-400 py-10 mt-auto print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
           {/* Brand & Project Info */}

@@ -137,8 +137,20 @@ class ApiService {
       timeSpentSeconds: number;
       inputMethod: 'voice' | 'text_fallback';
     }
-  ): Promise<{ answer: Answer; evaluation: Evaluation; remainingQuestions: number }> {
-    return this.request<{ answer: Answer; evaluation: Evaluation; remainingQuestions: number }>(
+  ): Promise<{
+    answer: Answer;
+    evaluation: Evaluation | null;
+    followUp?: Question | null;
+    remainingQuestions: number;
+    isPractice?: boolean;
+  }> {
+    return this.request<{
+      answer: Answer;
+      evaluation: Evaluation | null;
+      followUp?: Question | null;
+      remainingQuestions: number;
+      isPractice?: boolean;
+    }>(
       `/api/interviews/${interviewId}/answers`,
       {
         method: 'POST',
@@ -170,8 +182,8 @@ class ApiService {
     });
   }
 
-  async finishInterview(interviewId: string): Promise<{ interview: Interview; report: AssessmentReport }> {
-    return this.request<{ interview: Interview; report: AssessmentReport }>(
+  async finishInterview(interviewId: string): Promise<{ interview: Interview; report: AssessmentReport | null; isPractice?: boolean }> {
+    return this.request<{ interview: Interview; report: AssessmentReport | null; isPractice?: boolean }>(
       `/api/interviews/${interviewId}/finish`,
       {
         method: 'POST',
@@ -181,19 +193,21 @@ class ApiService {
 
   async getAssessmentReport(interviewId: string): Promise<{
     interview: Interview;
-    report: AssessmentReport;
+    report: AssessmentReport | null;
     questions: Question[];
     answers: Answer[];
     evaluations: Evaluation[];
     visualMetrics?: VisualEngagementMetrics;
+    isPractice?: boolean;
   }> {
     return this.request<{
       interview: Interview;
-      report: AssessmentReport;
+      report: AssessmentReport | null;
       questions: Question[];
       answers: Answer[];
       evaluations: Evaluation[];
       visualMetrics?: VisualEngagementMetrics;
+      isPractice?: boolean;
     }>(`/api/interviews/${interviewId}/report`);
   }
 

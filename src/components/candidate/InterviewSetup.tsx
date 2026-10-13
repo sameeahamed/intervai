@@ -77,6 +77,7 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
   const [jobDescription, setJobDescription] = useState<string>('');
   const [totalQuestions, setTotalQuestions] = useState<number>(5);
   const [durationMinutes, setDurationMinutes] = useState<number>(20);
+  const [isPractice, setIsPractice] = useState<boolean>(false);
   const [consentAccepted, setConsentAccepted] = useState<boolean>(true);
 
   // Hardware Checks
@@ -209,6 +210,7 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
         totalQuestions,
         durationMinutes,
         jobDescription: jobDescription.trim() || undefined,
+        isPractice: isPractice || undefined,
       });
 
       // Start interview session
@@ -341,6 +343,46 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
         {/* STEP 2: FORMAT, DIFFICULTY & SKILLS */}
         {step === 2 && (
           <div className="space-y-6">
+            {/* Practice / Ungraded Mode Toggle */}
+            <div
+              className={`p-4 rounded-2xl border flex items-center justify-between gap-4 transition ${
+                isPractice ? 'bg-amber-950/30 border-amber-800/60' : 'bg-[#18181c] border-[#27272a]'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <Sparkles className={`w-5 h-5 mt-0.5 shrink-0 ${isPractice ? 'text-amber-400' : 'text-zinc-500'}`} />
+                <div>
+                  <div className="text-sm font-bold text-white flex items-center gap-2">
+                    Practice / Warm-up Mode
+                    {isPractice && (
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-950/80 text-amber-300 border border-amber-800/60">
+                        Ungraded
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
+                    Run through the interview with no official scores, evaluation, or report. You can re-record answers freely. Excluded from your analytics.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isPractice}
+                aria-label="Toggle practice mode"
+                onClick={() => setIsPractice(!isPractice)}
+                className={`relative w-12 h-6 rounded-full transition shrink-0 ${
+                  isPractice ? 'bg-amber-500' : 'bg-[#27272a]'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                    isPractice ? 'translate-x-6' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
             {/* Interview Type */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-2">
@@ -623,6 +665,16 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
                 )}
               </div>
             </div>
+
+            {isPractice && (
+              <div className="p-3.5 bg-amber-950/30 border border-amber-800/50 rounded-2xl text-[11px] text-amber-200 flex items-start gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  This is a <strong className="text-amber-100">practice / warm-up session</strong>. Your answers are not scored and no official
+                  assessment report or analytics will be generated.
+                </span>
+              </div>
+            )}
 
             {/* Consent & Ethics Checkbox */}
             <div className="p-4 bg-blue-950/30 border border-blue-900/50 rounded-2xl space-y-2">

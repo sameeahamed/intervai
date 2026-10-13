@@ -52,11 +52,12 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
 }) => {
   const [data, setData] = useState<{
     interview: Interview;
-    report: ReportType;
+    report: ReportType | null;
     questions: Question[];
     answers: Answer[];
     evaluations: Evaluation[];
     visualMetrics?: VisualEngagementMetrics;
+    isPractice?: boolean;
   } | null>(null);
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -112,6 +113,96 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
 
   const { interview, report, questions, answers, evaluations, visualMetrics } = data;
 
+  // Practice (ungraded) sessions have no report. Render an honest Q&A review with
+  // no invented scores, radar, or analytics.
+  if (!report) {
+    const topLevelForPractice = questions
+      .filter((q) => !q.parentQuestionId)
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+
+    return (
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in text-[#e5e7eb]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#27272a] pb-6">
+          <button
+            onClick={onBackToDashboard}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-white transition"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to Candidate Dashboard</span>
+          </button>
+          <button
+            onClick={onStartNew}
+            className="px-4 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-sm transition flex items-center gap-1.5"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Start Another Session</span>
+          </button>
+        </div>
+
+        <div className="p-6 sm:p-8 bg-[#121215] border border-amber-800/40 rounded-3xl shadow-xl space-y-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-950/80 border border-amber-800/60 text-amber-300 text-xs font-semibold">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            Practice Session · Ungraded
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+            {interview.candidateName} • {interview.jobRole}
+          </h1>
+          <p className="text-xs text-zinc-400 leading-relaxed">
+            This was a practice / warm-up session. No official score, evaluation, assessment report, or analytics were recorded.
+            Review your responses below at your own pace.
+          </p>
+        </div>
+
+        <div className="p-6 bg-[#121215] border border-[#27272a] rounded-3xl shadow-sm space-y-4">
+          <h3 className="text-base font-bold text-white">Practice Response Review</h3>
+
+          {topLevelForPractice.length === 0 ? (
+            <p className="text-xs text-zinc-400">No questions were answered in this practice session.</p>
+          ) : (
+            <div className="space-y-3">
+              {topLevelForPractice.map((q, idx) => (
+                <div key={q.id} className="border border-[#27272a] rounded-2xl overflow-hidden bg-[#18181c]">
+                  <div className="p-4 flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-lg bg-amber-600/80 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                      Q{idx + 1}
+                    </div>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-bold text-white leading-snug">{q.questionText}</h4>
+                      <div className="flex items-center gap-2 text-[10px] text-zinc-400 mt-1">
+                        <span className="capitalize">{q.category}</span>
+                        <span>•</span>
+                        <span className="capitalize">{q.difficultyLevel} Difficulty</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="px-4 pb-4 space-y-2">
+                    <p className="p-3 bg-[#121215] rounded-xl border border-[#27272a] text-zinc-200 leading-relaxed font-mono text-[11px]">
+                      "{answers.find((a) => a.questionId === q.id)?.transcript || 'No response recorded.'}"
+                    </p>
+                    {questions
+                      .filter((c) => c.parentQuestionId === q.id)
+                      .sort((a, b) => a.orderIndex - b.orderIndex)
+                      .map((c) => (
+                        <div key={c.id} className="ml-5 pl-3 border-l-2 border-amber-900/40 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                            Follow-up Probe
+                          </span>
+                          <p className="text-xs font-semibold text-zinc-200">{c.questionText}</p>
+                          <p className="p-3 bg-[#121215] rounded-xl border border-[#27272a] text-zinc-300 leading-relaxed font-mono text-[11px]">
+                            "{answers.find((a) => a.questionId === c.id)?.transcript || 'No response recorded.'}"
+                          </p>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const radarData = [
     { subject: 'Technical', score: report.technicalScore, fullMark: 100 },
     { subject: 'Communication', score: report.communicationScore, fullMark: 100 },
@@ -136,7 +227,7 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
         <div className="flex items-center gap-2">
           <button
             id="btn-export-csv"
-            onClick={() => exportReportToCSV(data)}
+            onClick={() => exportReportToCSV({ interview, report, questions, answers, evaluations, visualMetrics })}
             className="px-3.5 py-2 text-xs font-semibold bg-[#121215] hover:bg-[#18181c] text-zinc-300 rounded-xl border border-[#27272a] transition flex items-center gap-1.5"
           >
             <Download className="w-3.5 h-3.5" />
@@ -195,7 +286,7 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
               </strong>
             </div>
             <div className="text-[11px] text-zinc-400">
-              {questions.length} Questions Evaluated
+              {evaluations.length} Responses Evaluated
             </div>
           </div>
         </div>
@@ -317,90 +408,124 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
         </div>
 
         <div className="space-y-3">
-          {questions.map((q, idx) => {
-            const ans = answers.find((a) => a.questionId === q.id);
-            const ev = evaluations.find((e) => e.questionId === q.id);
-            const isExpanded = expandedQuestion === q.id;
+          {questions
+            .filter((q) => !q.parentQuestionId)
+            .sort((a, b) => a.orderIndex - b.orderIndex)
+            .map((q, idx) => {
+              const followUps = questions
+                .filter((c) => c.parentQuestionId === q.id)
+                .sort((a, b) => a.orderIndex - b.orderIndex);
 
-            return (
-              <div
-                key={q.id}
-                className="border border-[#27272a] rounded-2xl overflow-hidden transition bg-[#18181c]"
-              >
-                {/* Header Row */}
-                <button
-                  onClick={() => setExpandedQuestion(isExpanded ? null : q.id)}
-                  className="w-full p-4 text-left bg-[#18181c] hover:bg-[#202026] flex items-center justify-between gap-4 transition"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="w-7 h-7 rounded-lg bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
-                      Q{idx + 1}
-                    </div>
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-bold text-white leading-snug">
-                        {q.questionText}
-                      </h4>
-                      <div className="flex items-center gap-2 text-[10px] text-zinc-400 mt-1">
-                        <span className="capitalize">{q.category}</span>
-                        <span>•</span>
-                        <span className="capitalize">{q.difficultyLevel} Difficulty</span>
+              const renderCard = (item: Question, isNested: boolean) => {
+                const ans = answers.find((a) => a.questionId === item.id);
+                const ev = evaluations.find((e) => e.questionId === item.id);
+                const isExpanded = expandedQuestion === item.id;
+
+                return (
+                  <div
+                    className={`border rounded-2xl overflow-hidden transition bg-[#18181c] ${
+                      isNested ? 'border-indigo-900/50' : 'border-[#27272a]'
+                    }`}
+                  >
+                    {/* Header Row */}
+                    <button
+                      onClick={() => setExpandedQuestion(isExpanded ? null : item.id)}
+                      className="w-full p-4 text-left bg-[#18181c] hover:bg-[#202026] flex items-center justify-between gap-4 transition"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`w-7 h-7 rounded-lg text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 ${
+                            isNested ? 'bg-indigo-600' : 'bg-blue-600'
+                          }`}
+                        >
+                          {isNested ? '↳' : `Q${idx + 1}`}
+                        </div>
+                        <div>
+                          {isNested && (
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-400">
+                              Follow-up Probe
+                            </span>
+                          )}
+                          <h4 className="text-xs sm:text-sm font-bold text-white leading-snug">
+                            {item.questionText}
+                          </h4>
+                          <div className="flex items-center gap-2 text-[10px] text-zinc-400 mt-1">
+                            <span className="capitalize">{item.category}</span>
+                            <span>•</span>
+                            <span className="capitalize">{item.difficultyLevel} Difficulty</span>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
 
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="text-right">
-                      <span className="text-sm font-black text-blue-400">
-                        {ev?.overallScore || 0}%
-                      </span>
-                    </div>
-                    {isExpanded ? (
-                      <ChevronUp className="w-4 h-4 text-zinc-400" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-zinc-400" />
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right">
+                          <span className="text-sm font-black text-blue-400">
+                            {ev ? `${ev.overallScore}%` : '—'}
+                          </span>
+                        </div>
+                        {isExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-zinc-400" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-zinc-400" />
+                        )}
+                      </div>
+                    </button>
+
+                    {/* Expanded Details */}
+                    {isExpanded && (
+                      <div className="p-5 bg-[#121215] border-t border-[#27272a] space-y-4 text-xs">
+                        {/* Candidate Transcript */}
+                        <div className="space-y-1">
+                          <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                            Candidate Spoken Transcript:
+                          </span>
+                          <p className="p-3 bg-[#18181c] rounded-xl border border-[#27272a] text-zinc-200 leading-relaxed font-mono text-[11px]">
+                            "{ans?.transcript || 'No response recorded.'}"
+                          </p>
+                        </div>
+
+                        {ev ? (
+                          <>
+                            {/* AI Feedback */}
+                            <div className="p-3.5 bg-blue-950/40 rounded-xl border border-blue-900/60 space-y-1.5">
+                              <span className="text-[11px] font-bold text-blue-300">
+                                AI Assessor Feedback:
+                              </span>
+                              <p className="text-zinc-300 leading-relaxed">{ev.feedback}</p>
+                            </div>
+
+                            {/* Exemplar Model Answer */}
+                            {ev.suggestedAnswer && (
+                              <div className="space-y-1">
+                                <span className="text-[11px] font-bold text-purple-400 uppercase tracking-wider">
+                                  Benchmark Model Answer:
+                                </span>
+                                <p className="p-3 bg-purple-950/30 rounded-xl border border-purple-900/50 text-zinc-300 leading-relaxed">
+                                  {ev.suggestedAnswer}
+                                </p>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-[11px] text-zinc-400">No evaluation recorded for this response.</p>
+                        )}
+                      </div>
                     )}
                   </div>
-                </button>
+                );
+              };
 
-                {/* Expanded Details */}
-                {isExpanded && (
-                  <div className="p-5 bg-[#121215] border-t border-[#27272a] space-y-4 text-xs">
-                    {/* Candidate Transcript */}
-                    <div className="space-y-1">
-                      <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
-                        Candidate Spoken Transcript:
-                      </span>
-                      <p className="p-3 bg-[#18181c] rounded-xl border border-[#27272a] text-zinc-200 leading-relaxed font-mono text-[11px]">
-                        "{ans?.transcript || 'No response recorded.'}"
-                      </p>
+              return (
+                <React.Fragment key={q.id}>
+                  {renderCard(q, false)}
+                  {followUps.map((c) => (
+                    <div key={c.id} className="ml-6 sm:ml-8">
+                      {renderCard(c, true)}
                     </div>
-
-                    {/* AI Feedback */}
-                    <div className="p-3.5 bg-blue-950/40 rounded-xl border border-blue-900/60 space-y-1.5">
-                      <span className="text-[11px] font-bold text-blue-300">
-                        AI Assessor Feedback:
-                      </span>
-                      <p className="text-zinc-300 leading-relaxed">
-                        {ev?.feedback}
-                      </p>
-                    </div>
-
-                    {/* Exemplar Model Answer */}
-                    {ev?.suggestedAnswer && (
-                      <div className="space-y-1">
-                        <span className="text-[11px] font-bold text-purple-400 uppercase tracking-wider">
-                          Benchmark Model Answer:
-                        </span>
-                        <p className="p-3 bg-purple-950/30 rounded-xl border border-purple-900/50 text-zinc-300 leading-relaxed">
-                          {ev.suggestedAnswer}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                  ))}
+                </React.Fragment>
+              );
+            })}
         </div>
       </div>
 

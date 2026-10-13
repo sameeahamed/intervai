@@ -100,6 +100,8 @@ export async function generateNextAdaptiveQuestion(params: {
   previousEvaluations: Evaluation[];
   orderIndex: number;
   candidateResume?: string;
+  isFollowUp?: boolean;
+  parentQuestionText?: string;
 }): Promise<Omit<Question, 'id' | 'interviewId'>> {
   const { interview, previousQuestions, previousAnswers, previousEvaluations, orderIndex, candidateResume } = params;
   const ai = getGenAIClient();
@@ -128,6 +130,14 @@ ${jdContext ? `<<<JOB_DESCRIPTION\n${jdContext}\nJOB_DESCRIPTION>>>` : ''}
 `
     : '';
 
+  const followUpBlock = params.isFollowUp
+    ? `
+FOLLOW-UP PROBE MODE:
+The candidate just answered the question: "${(params.parentQuestionText || '').slice(0, 300)}".
+Ask ONE focused follow-up that digs deeper into a gap, unstated trade-off, concrete example, or measurement from their answer. Do NOT repeat the original question verbatim. Stay realistic and conversational.
+`
+    : '';
+
   const prompt = `You are an elite, realistic, and conversational human tech interviewer conducting a live voice interview assessment.
 Candidate Information:
 - Candidate Name: ${interview.candidateName || 'Candidate'}
@@ -137,7 +147,7 @@ Candidate Information:
 - Target Difficulty: ${targetDifficulty}
 - Required Candidate Skills: ${interview.skills.join(', ')}
 - Question Number: ${orderIndex} of ${interview.totalQuestions}
-${personalizationBlock}
+${personalizationBlock}${followUpBlock}
 Previous Questions & Candidate Performance Context:
 ${previousQuestions.map((q, idx) => {
   const ans = previousAnswers.find(a => a.questionId === q.id);
@@ -222,7 +232,7 @@ CRITICAL INSTRUCTIONS FOR REALISTIC HUMAN INTERVIEWER STYLE:
   }
 
   // Intelligent Fallback Question Generator
-  return generateFallbackQuestion(interview, orderIndex, targetDifficulty);
+  return generateFallbackQuestion(interview, orderIndex, targetDifficulty, !!params.isFollowUp);
 }
 
 /**
@@ -491,7 +501,24 @@ export async function generateSpeechAudio(text: string, voiceName: 'Kore' | 'Puc
 }
 
 // Helper: Deterministic question bank by role & difficulty with realistic interviewer phrasing
-function generateFallbackQuestion(interview: Interview, orderIndex: number, difficulty: string): Omit<Question, 'id' | 'interviewId'> {
+function generateFallbackQuestion(interview: Interview, orderIndex: number, difficulty: string, isFollowUp = false): Omit<Question, 'id' | 'interviewId'> {
+  // Deterministic follow-up probe when no model is available. Still a single,
+  // focused probe that refers back to the candidate's prior answer.
+  if (isFollowUp) {
+    const probeLeadIn = 'Thanks — that gives me a useful starting point. Let me dig one level deeper into your reasoning here.';
+    const probeText = `Building on what you just described for the ${interview.jobRole} role, walk me through a specific example: what concrete trade-offs, failure modes, or measurements would you apply, and what was the outcome?`;
+    return {
+      orderIndex,
+      questionText: probeText,
+      spokenLeadIn: probeLeadIn,
+      spokenDialogue: `${probeLeadIn} ${probeText}`,
+      category: 'Follow-up Probe',
+      difficultyLevel: difficulty || 'medium',
+      expectedPoints: ['Specific concrete example', 'Explicit trade-offs', 'Failure modes / edge cases', 'Measurable outcome or metric'],
+      hints: 'Go deeper than your first answer: a concrete example with real trade-offs and results.',
+    };
+  }
+
   const role = interview.jobRole.toLowerCase();
   
   const leadIns = [

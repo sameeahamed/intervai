@@ -70,36 +70,66 @@ function getCandidateResumeForInterview(interview: Interview): string | undefine
   return db.getUserById(interview.candidateId)?.resumeText;
 }
 
+// Top-level (template) questions only; adaptive follow-ups carry a parentQuestionId
+// and must never advance the interview's numbered progression.
+function getTopLevelQuestions(interviewId: string): Question[] {
+  return db
+    .getQuestionsByInterview(interviewId)
+    .filter(q => !q.parentQuestionId)
+    .sort((a, b) => a.orderIndex - b.orderIndex);
+}
+
+function getAnsweredTopLevelCount(interviewId: string): number {
+  const topLevelIds = new Set(getTopLevelQuestions(interviewId).map(q => q.id));
+  const answers = db.getAnswersByInterview(interviewId);
+  const answeredIds = new Set(answers.filter(a => topLevelIds.has(a.questionId)).map(a => a.questionId));
+  return answeredIds.size;
+}
+
+// Server-enforced follow-up nesting depth: 0 for a base question, 1 for a
+// first-level probe, 2 for a probe-of-a-probe. The server never exceeds 2.
+function getQuestionDepth(interviewId: string, questionId: string): number {
+  const questions = db.getQuestionsByInterview(interviewId);
+  const byId = new Map(questions.map(q => [q.id, q]));
+  const seen = new Set<string>();
+  let current = byId.get(questionId);
+  let depth = 0;
+  while (current && current.parentQuestionId && !seen.has(current.id)) {
+    seen.add(current.id);
+    depth += 1;
+    current = byId.get(current.parentQuestionId);
+  }
+  return depth;
+}
+
 async function prefetchNextQuestion(interviewId: string) {
   if (activePrefetches.has(interviewId)) return;
 
   const interview = db.getInterview(interviewId);
   if (!interview) return;
 
-  const questions = db.getQuestionsByInterview(interview.id);
-  const answers = db.getAnswersByInterview(interview.id);
-  const evaluations = db.getEvaluationsByInterview(interview.id);
+  const topLevel = getTopLevelQuestions(interview.id);
+  const answeredTopLevel = getAnsweredTopLevelCount(interview.id);
 
-  // If there is already an unanswered question prepared or max reached, stop
-  if (questions.length > answers.length || questions.length >= interview.totalQuestions) {
+  // If there is already an unanswered top-level question prepared or max reached, stop
+  if (topLevel.length > answeredTopLevel || topLevel.length >= interview.totalQuestions) {
     return;
   }
 
-  const nextOrderIndex = questions.length + 1;
+  const nextOrderIndex = topLevel.length + 1;
   activePrefetches.add(interviewId);
 
   try {
     const questionData = await generateNextAdaptiveQuestion({
       interview,
-      previousQuestions: questions,
-      previousAnswers: answers,
-      previousEvaluations: evaluations,
+      previousQuestions: db.getQuestionsByInterview(interview.id),
+      previousAnswers: db.getAnswersByInterview(interview.id),
+      previousEvaluations: db.getEvaluationsByInterview(interview.id),
       orderIndex: nextOrderIndex,
       candidateResume: getCandidateResumeForInterview(interview),
     });
 
-    const currentQuestions = db.getQuestionsByInterview(interview.id);
-    if (currentQuestions.length < nextOrderIndex) {
+    if (getTopLevelQuestions(interview.id).length < nextOrderIndex) {
       const newQuestion: Question = {
         id: `q-${interview.id}-${nextOrderIndex}-${Math.random().toString(36).substring(2, 5)}`,
         interviewId: interview.id,
@@ -289,7 +319,8 @@ async function startServer() {
         skills,
         totalQuestions,
         durationMinutes,
-        jobDescription
+        jobDescription,
+        isPractice
       } = req.body;
 
       if (!jobRole || !experienceLevel) {
@@ -312,6 +343,8 @@ async function startServer() {
         durationMinutes: Number(durationMinutes) || 20,
         status: 'setup',
         createdAt: new Date().toISOString(),
+        // Ungraded practice / warm-up sessions: stored explicitly, never scored.
+        ...(isPractice === true ? { isPractice: true } : {}),
         ...(cleanJobDescription ? { jobDescription: cleanJobDescription } : {}),
       };
 
@@ -376,42 +409,36 @@ async function startServer() {
         return res.status(403).json({ error: 'Access denied.' });
       }
 
-      const questions = db.getQuestionsByInterview(interview.id);
+      // Only top-level (template) questions advance the numbered progression.
+      // Adaptive follow-up probes are presented in-context and never returned here.
+      const topLevel = getTopLevelQuestions(interview.id);
       const answers = db.getAnswersByInterview(interview.id);
-      const evaluations = db.getEvaluationsByInterview(interview.id);
+      const answeredIds = new Set(answers.map(a => a.questionId));
+      const unansweredTopLevel = topLevel.filter(q => !answeredIds.has(q.id));
 
-      // Check if current question is already generated but unanswered -> return instantly (0ms)
-      if (questions.length > answers.length) {
-        const currentUnanswered = questions[questions.length - 1];
+      // Check if a top-level question is already generated but unanswered -> return instantly (0ms)
+      if (unansweredTopLevel.length > 0) {
         // Background prefetch the subsequent question if needed
         prefetchNextQuestion(interview.id);
-        return res.json(currentUnanswered);
+        return res.json(unansweredTopLevel[0]);
       }
 
       // Check if reached max questions
-      if (questions.length >= interview.totalQuestions) {
+      if (topLevel.length >= interview.totalQuestions) {
         return res.status(400).json({
           error: 'All questions for this interview have already been answered.',
           isComplete: true
         });
       }
 
-      const nextOrderIndex = questions.length + 1;
-
-      // Check if question already pre-generated in DB
-      const existingPreQuestion = questions.find(q => q.orderIndex === nextOrderIndex);
-      if (existingPreQuestion) {
-        // Trigger prefetch for the following question
-        prefetchNextQuestion(interview.id);
-        return res.json(existingPreQuestion);
-      }
+      const nextOrderIndex = topLevel.length + 1;
 
       // Call AI with fast timeout fallback
       const questionData = await generateNextAdaptiveQuestion({
         interview,
-        previousQuestions: questions,
+        previousQuestions: db.getQuestionsByInterview(interview.id),
         previousAnswers: answers,
-        previousEvaluations: evaluations,
+        previousEvaluations: db.getEvaluationsByInterview(interview.id),
         orderIndex: nextOrderIndex,
         candidateResume: getCandidateResumeForInterview(interview)
       });
@@ -462,11 +489,17 @@ async function startServer() {
         return res.status(404).json({ error: 'Question not found for this interview.' });
       }
 
-      // Check if already answered to prevent duplicate submissions
+      const isPractice = !!interview.isPractice;
+
+      // Duplicate handling: graded sessions are immutable (block re-submission);
+      // practice sessions may re-record, so the prior answer is replaced.
       const existingAnswers = db.getAnswersByInterview(interview.id);
       const duplicate = existingAnswers.find(a => a.questionId === questionId);
       if (duplicate) {
-        return res.status(400).json({ error: 'This question has already been submitted.' });
+        if (!isPractice) {
+          return res.status(400).json({ error: 'This question has already been submitted.' });
+        }
+        db.removeAnswer(interview.id, questionId);
       }
 
       // 1. Record Answer
@@ -484,10 +517,23 @@ async function startServer() {
       };
       db.addAnswer(newAnswer);
 
-      // Trigger background prefetch for the NEXT question right away
+      // Trigger background prefetch for the NEXT top-level question right away
       prefetchNextQuestion(interview.id);
 
-      // 2. Perform AI Evaluation
+      const remainingQuestions = Math.max(0, interview.totalQuestions - getAnsweredTopLevelCount(interview.id));
+
+      // 2. Practice (ungraded) sessions: no official evaluation, no follow-up probes.
+      if (isPractice) {
+        return res.status(201).json({
+          answer: newAnswer,
+          evaluation: null,
+          followUp: null,
+          remainingQuestions,
+          isPractice: true
+        });
+      }
+
+      // 3. Graded: perform AI Evaluation
       const evalData = await evaluateCandidateAnswer({
         interview,
         question: targetQuestion,
@@ -505,11 +551,67 @@ async function startServer() {
       };
       db.addEvaluation(newEvaluation);
 
-      // Return both answer and evaluation
+      // 4. Adaptive follow-up probe (graded only). Eligibility and depth are
+      // enforced server-side: depth < 2, no existing child, substantive answer,
+      // and an answer that leaves room to probe (score <= 88).
+      let followUp: Question | null = null;
+      try {
+        const depth = getQuestionDepth(interview.id, targetQuestion.id);
+        const alreadyHasChild = db
+          .getQuestionsByInterview(interview.id)
+          .some(q => q.parentQuestionId === targetQuestion.id);
+        const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
+        const eligibleForFollowUp =
+          depth < 2 && !alreadyHasChild && wordCount >= 20 && newEvaluation.overallScore <= 88;
+
+        if (eligibleForFollowUp) {
+          const followUpData = await generateNextAdaptiveQuestion({
+            interview,
+            previousQuestions: db.getQuestionsByInterview(interview.id),
+            previousAnswers: [...existingAnswers, newAnswer],
+            previousEvaluations: db.getEvaluationsByInterview(interview.id),
+            orderIndex: targetQuestion.orderIndex,
+            candidateResume: getCandidateResumeForInterview(interview),
+            isFollowUp: true,
+            parentQuestionText: targetQuestion.questionText,
+          });
+
+          // Re-check after the async call so concurrent/duplicate requests cannot
+          // generate more than one child per parent.
+          const childExistsNow = db
+            .getQuestionsByInterview(interview.id)
+            .some(q => q.parentQuestionId === targetQuestion.id);
+          if (!childExistsNow) {
+            const followUpQuestion: Question = {
+              id: `q-${interview.id}-fu-${targetQuestion.orderIndex}-${Math.random().toString(36).substring(2, 5)}`,
+              interviewId: interview.id,
+              orderIndex: targetQuestion.orderIndex,
+              parentQuestionId: targetQuestion.id,
+              questionText: followUpData.questionText,
+              spokenLeadIn: followUpData.spokenLeadIn,
+              spokenDialogue: followUpData.spokenDialogue,
+              category: followUpData.category || 'Follow-up Probe',
+              difficultyLevel: followUpData.difficultyLevel,
+              expectedPoints: followUpData.expectedPoints,
+              hints: followUpData.hints,
+              createdAt: new Date().toISOString()
+            };
+            followUp = db.addQuestion(followUpQuestion);
+          }
+        }
+      } catch (followUpErr: any) {
+        // A follow-up is an enhancement, never a requirement: on any error we
+        // simply continue without one rather than fabricating a probe.
+        console.warn('Follow-up generation notice:', followUpErr?.message || followUpErr);
+        followUp = null;
+      }
+
+      // Return answer, evaluation, and any generated follow-up probe
       res.status(201).json({
         answer: newAnswer,
         evaluation: newEvaluation,
-        remainingQuestions: Math.max(0, interview.totalQuestions - (existingAnswers.length + 1))
+        followUp,
+        remainingQuestions
       });
     } catch (err: any) {
       console.error('Answer submission error:', err);
@@ -581,6 +683,19 @@ async function startServer() {
         return res.status(403).json({ error: 'Access denied.' });
       }
 
+      // Practice sessions never produce an official assessment report.
+      if (interview.isPractice) {
+        const completedPractice = db.updateInterview(interview.id, {
+          status: 'completed',
+          completedAt: new Date().toISOString()
+        });
+        return res.json({
+          interview: completedPractice,
+          report: null,
+          isPractice: true
+        });
+      }
+
       const questions = db.getQuestionsByInterview(interview.id);
       const answers = db.getAnswersByInterview(interview.id);
       const evaluations = db.getEvaluationsByInterview(interview.id);
@@ -632,18 +747,20 @@ async function startServer() {
       }
 
       const report = db.getAssessmentReport(interview.id);
-      if (!report) {
+      const isPractice = !!interview.isPractice;
+      if (!report && !isPractice) {
         return res.status(404).json({ error: 'Report not yet generated for this interview.' });
       }
 
       res.json({
         interview,
-        report,
+        report: report || null,
         questions: db.getQuestionsByInterview(interview.id),
         answers: db.getAnswersByInterview(interview.id),
         evaluations: db.getEvaluationsByInterview(interview.id),
         visualMetrics: db.getVisualMetrics(interview.id),
-        integrityEvents: db.getIntegrityEvents(interview.id)
+        integrityEvents: db.getIntegrityEvents(interview.id),
+        isPractice
       });
     } catch (err: any) {
       res.status(500).json({ error: 'Failed to retrieve assessment report.' });
@@ -770,7 +887,9 @@ async function startServer() {
 
   app.get('/api/analytics/candidate', requireAuth, (req: AuthenticatedRequest, res) => {
     try {
-      const interviews = db.getCandidateInterviews(req.user.id);
+      // Practice / warm-up sessions are ungraded and excluded from all candidate
+      // analytics (scores, completed counts, radar dimensions, and practice time).
+      const interviews = db.getCandidateInterviews(req.user.id).filter(i => !i.isPractice);
       const completed = interviews.filter(i => i.status === 'completed' && i.report);
 
       const scoreHistory = completed.map(i => ({

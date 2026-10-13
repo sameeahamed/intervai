@@ -65,6 +65,9 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   const [lastEvaluation, setLastEvaluation] = useState<Evaluation | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false);
   const [remainingQuestionsCount, setRemainingQuestionsCount] = useState<number>(0);
+  // Ungraded practice confirmation modal (no score) and pending adaptive follow-up probe
+  const [showPracticeModal, setShowPracticeModal] = useState<boolean>(false);
+  const [pendingFollowUp, setPendingFollowUp] = useState<Question | null>(null);
 
   // Hardware & Controls
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -231,49 +234,56 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   };
 
   // 3. QUESTION ORCHESTRATION & REALISTIC AI VOICE SPEAKING
-  const loadNextQuestion = async (intvId: string) => {
+  // Presents a specific (already-resolved) question to the candidate, whether it
+  // is a numbered template question or an adaptive follow-up probe.
+  const presentQuestion = async (q: Question) => {
     setShowFeedbackModal(false);
+    setShowPracticeModal(false);
+    setPendingFollowUp(null);
     setTranscript('');
     setIsEditingTranscript(false);
-    setVoiceState('next_question');
+    setCurrentQuestion(q);
+    setQuestionStartTime(Date.now());
 
+    // Realistic spoken script (Conversational Lead-in + Core Question)
+    const spokenText =
+      q.spokenDialogue ||
+      (q.spokenLeadIn ? `${q.spokenLeadIn} ${q.questionText}` : q.questionText);
+
+    // AI speaks with realistic, bold vocal modulation with zero lag
+    setVoiceState('ai_speaking');
+    if (voiceServiceRef.current && !isMuted) {
+      await voiceServiceRef.current.speak(
+        spokenText,
+        () => setVoiceState('ai_speaking'),
+        () => {
+          // When AI stops speaking, automatically open candidate mic listener
+          setVoiceState('listening');
+          if (voiceServiceRef.current && isMicOn) {
+            voiceServiceRef.current.startListening();
+          }
+        },
+        () => {
+          // Fallback when speech completes or errors
+          setVoiceState('listening');
+          if (voiceServiceRef.current && isMicOn) {
+            voiceServiceRef.current.startListening();
+          }
+        }
+      );
+    } else {
+      setVoiceState('listening');
+      if (voiceServiceRef.current && isMicOn) {
+        voiceServiceRef.current.startListening();
+      }
+    }
+  };
+
+  const loadNextQuestion = async (intvId: string) => {
+    setVoiceState('next_question');
     try {
       const q = await api.getNextQuestion(intvId);
-      setCurrentQuestion(q);
-      setQuestionStartTime(Date.now());
-
-      // Realistic spoken script (Conversational Lead-in + Core Question)
-      const spokenText =
-        q.spokenDialogue ||
-        (q.spokenLeadIn ? `${q.spokenLeadIn} ${q.questionText}` : q.questionText);
-
-      // AI speaks with realistic, bold vocal modulation with zero lag
-      setVoiceState('ai_speaking');
-      if (voiceServiceRef.current && !isMuted) {
-        await voiceServiceRef.current.speak(
-          spokenText,
-          () => setVoiceState('ai_speaking'),
-          () => {
-            // When AI stops speaking, automatically open candidate mic listener
-            setVoiceState('listening');
-            if (voiceServiceRef.current && isMicOn) {
-              voiceServiceRef.current.startListening();
-            }
-          },
-          () => {
-            // Fallback when speech completes or errors
-            setVoiceState('listening');
-            if (voiceServiceRef.current && isMicOn) {
-              voiceServiceRef.current.startListening();
-            }
-          }
-        );
-      } else {
-        setVoiceState('listening');
-        if (voiceServiceRef.current && isMicOn) {
-          voiceServiceRef.current.startListening();
-        }
-      }
+      await presentQuestion(q);
     } catch (err: any) {
       if (err.message?.includes('completed') || err.message?.includes('No more questions')) {
         await handleFinishInterview();
@@ -392,13 +402,44 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         inputMethod: isMicOn ? 'voice' : 'text_fallback',
       });
 
-      setLastEvaluation(result.evaluation);
       setRemainingQuestionsCount(result.remainingQuestions);
+
+      // Practice (ungraded): no score, no evaluation, allow re-record.
+      if (result.isPractice) {
+        setShowPracticeModal(true);
+        setVoiceState('idle');
+        return;
+      }
+
+      setLastEvaluation(result.evaluation);
+      setPendingFollowUp(result.followUp || null);
       setShowFeedbackModal(true);
       setVoiceState('idle');
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to evaluate answer. Please try again.');
       setVoiceState('listening');
+    }
+  };
+
+  // Practice-only: clear the recorded answer and re-open the mic for the same question.
+  const handlePracticeReRecord = () => {
+    setShowPracticeModal(false);
+    setTranscript('');
+    setIsEditingTranscript(false);
+    setQuestionStartTime(Date.now());
+    setVoiceState('listening');
+    if (voiceServiceRef.current && isMicOn) {
+      voiceServiceRef.current.startListening('');
+    }
+  };
+
+  // Continue from the feedback modal: present a follow-up probe if the AI
+  // generated one, otherwise advance to the next numbered question.
+  const handleContinueAfterFeedback = async () => {
+    if (pendingFollowUp) {
+      await presentQuestion(pendingFollowUp);
+    } else {
+      await loadNextQuestion(interviewId);
     }
   };
 
@@ -428,6 +469,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   };
 
   const activePersonaObj = VOICE_PERSONAS[voicePersona];
+  const isPractice = !!interview?.isPractice;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 animate-fade-in text-[#e5e7eb]">
@@ -441,9 +483,15 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
           <div>
             <h2 className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
               {interview?.jobRole} ({interview?.experienceLevel})
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 font-semibold border border-emerald-800/60">
-                Live Simulation
-              </span>
+              {isPractice ? (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 font-semibold border border-amber-800/60">
+                  Practice · Ungraded
+                </span>
+              ) : (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 font-semibold border border-emerald-800/60">
+                  Live Simulation
+                </span>
+              )}
             </h2>
             <div className="flex items-center gap-2 text-xs text-zinc-400">
               <span>Question {currentQuestion?.orderIndex || 1} of {interview?.totalQuestions || 5}</span>
@@ -471,7 +519,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
             className="px-3.5 py-1.5 text-xs font-semibold bg-blue-950/80 hover:bg-blue-900/80 text-blue-300 border border-blue-800/60 rounded-xl transition flex items-center gap-1.5"
           >
             <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
-            Finish & Generate Report
+            {isPractice ? 'Finish Practice' : 'Finish & Generate Report'}
           </button>
           <button
             onClick={() => setShowExitDialog(true)}
@@ -510,6 +558,16 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
               You are interviewing for the <strong className="text-white">{interview?.jobRole} ({interview?.experienceLevel})</strong> position.
               Your AI interviewer <strong className="text-blue-400">{activePersonaObj.name}</strong> will speak questions out loud with realistic voice output.
             </p>
+
+            {isPractice && (
+              <div className="p-3.5 bg-amber-950/30 border border-amber-800/50 rounded-2xl text-xs text-amber-200 flex items-start gap-2 text-left">
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong className="text-amber-100">Practice / warm-up session.</strong> Answers are not scored, you can re-record freely,
+                  and no official assessment report or analytics will be generated.
+                </span>
+              </div>
+            )}
 
             {/* Session Summary Details */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-2 text-left">
@@ -620,9 +678,11 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
             {/* Core Spoken Question Prompt */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                <span className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 ${
+                  currentQuestion?.parentQuestionId ? 'text-indigo-400' : 'text-emerald-400'
+                }`}>
                   <Sparkles className="w-3.5 h-3.5" />
-                  Technical Assessment Prompt
+                  {currentQuestion?.parentQuestionId ? 'Adaptive Follow-up Probe' : 'Technical Assessment Prompt'}
                 </span>
                 <button
                   onClick={handleRepeatQuestion}
@@ -857,12 +917,29 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
               )}
             </div>
 
+            {/* Follow-up Probe Notice */}
+            {pendingFollowUp && (
+              <div className="p-3.5 bg-indigo-950/40 rounded-2xl border border-indigo-900/60 text-[11px] text-indigo-200 flex items-start gap-2">
+                <MessageSquareQuote className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                <span>The interviewer will probe one part of your answer more deeply next.</span>
+              </div>
+            )}
+
             {/* Next Action Button */}
             <div className="flex items-center justify-end gap-3 pt-2">
-              {remainingQuestionsCount > 0 ? (
+              {pendingFollowUp ? (
+                <button
+                  id="btn-follow-up"
+                  onClick={handleContinueAfterFeedback}
+                  className="w-full sm:w-auto px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2"
+                >
+                  <span>Continue to Follow-up Probe</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              ) : remainingQuestionsCount > 0 ? (
                 <button
                   id="btn-next-question"
-                  onClick={() => loadNextQuestion(interviewId)}
+                  onClick={handleContinueAfterFeedback}
                   className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2"
                 >
                   <span>Continue to Next Question ({remainingQuestionsCount} left)</span>
@@ -876,6 +953,62 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Finish Interview & View Comprehensive Report</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3b. PRACTICE (UNGRADED) CONFIRMATION MODAL */}
+      {showPracticeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#121215] border border-amber-800/50 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-5 animate-scale-in">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-950/80 text-amber-400 flex items-center justify-center border border-amber-800/60">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  Answer Recorded
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 font-semibold border border-amber-800/60">
+                    Practice · Ungraded
+                  </span>
+                </h3>
+                <p className="text-xs text-zinc-400">No official score or evaluation is recorded in practice mode.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-400 p-3.5 bg-[#18181c] rounded-2xl border border-[#27272a] leading-relaxed">
+              Take your time. You can re-record this answer to refine your delivery, or continue to the next question.
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-2">
+              <button
+                onClick={handlePracticeReRecord}
+                className="w-full sm:w-auto px-5 py-3 bg-[#18181c] hover:bg-[#202026] text-zinc-200 text-xs font-bold rounded-xl border border-[#27272a] transition flex items-center justify-center gap-2"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Re-record this answer</span>
+              </button>
+
+              {remainingQuestionsCount > 0 ? (
+                <button
+                  id="btn-practice-next"
+                  onClick={() => loadNextQuestion(interviewId)}
+                  className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2"
+                >
+                  <span>Next Question ({remainingQuestionsCount} left)</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  id="btn-practice-finish"
+                  onClick={handleFinishInterview}
+                  className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Finish Practice</span>
                 </button>
               )}
             </div>

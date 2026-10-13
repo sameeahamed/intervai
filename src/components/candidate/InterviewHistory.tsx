@@ -158,12 +158,21 @@ export const InterviewHistory: React.FC<InterviewHistoryProps> = ({
               className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-[#18181c] transition"
             >
               <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-blue-950/80 text-blue-400 flex items-center justify-center font-black text-base shrink-0 border border-blue-800/60">
-                  {intv.report?.overallScore || (intv.status === 'completed' ? 88 : '—')}%
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-base shrink-0 border ${
+                  intv.isPractice
+                    ? 'bg-amber-950/60 text-amber-400 border-amber-800/60'
+                    : 'bg-blue-950/80 text-blue-400 border-blue-800/60'
+                }`}>
+                  {typeof intv.report?.overallScore === 'number' ? `${intv.report.overallScore}%` : '—'}
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     {intv.jobRole} ({intv.experienceLevel})
+                    {intv.isPractice && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 font-semibold border border-amber-800/60 normal-case">
+                        Practice · Ungraded
+                      </span>
+                    )}
                   </h3>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400 mt-1">
                     <span className="capitalize">{intv.interviewType}</span>

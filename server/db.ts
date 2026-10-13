@@ -1036,6 +1036,23 @@ class Database {
     return this.answers.get(interviewId) || [];
   }
 
+  // Remove a candidate's answer for a specific question. Used only by practice
+  // (ungraded) sessions to allow re-recording; graded answers stay immutable.
+  public removeAnswer(interviewId: string, questionId: string): boolean {
+    const list = this.answers.get(interviewId);
+    if (!list) return false;
+    const next = list.filter(a => a.questionId !== questionId);
+    const removed = next.length !== list.length;
+    this.answers.set(interviewId, next);
+
+    if (removed) {
+      safeMongoWrite('Remove answer', () =>
+        AnswerModel.deleteMany({ interviewId, questionId }).exec()
+      );
+    }
+    return removed;
+  }
+
   // --------------------------------------------------------------------------
   // Evaluations
   // --------------------------------------------------------------------------
@@ -1198,7 +1215,9 @@ class Database {
   // Admin Analytics Aggregation
   // --------------------------------------------------------------------------
   public getAdminAnalytics(): AdminAnalytics {
-    const all = this.getAllInterviews();
+    // Practice / warm-up sessions are ungraded and excluded from all official
+    // aggregate analytics and score distributions.
+    const all = this.getAllInterviews().filter(i => !i.isPractice);
     const completed = all.filter(i => i.status === 'completed');
     const candidates = Array.from(this.users.values()).filter(u => u.role === 'candidate');
 

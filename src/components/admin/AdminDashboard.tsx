@@ -7,6 +7,7 @@ import { api } from '../../services/api.ts';
 import {
   AdminAnalytics,
   User,
+  Interview,
   InterviewTemplate,
   ScoringConfig,
   IntegrityEvent
@@ -26,7 +27,12 @@ import {
   Save,
   Search,
   FileText,
-  Sparkles
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  ArrowLeft,
+  Database,
+  AlertTriangle
 } from 'lucide-react';
 import {
   BarChart,
@@ -41,13 +47,24 @@ import {
   Cell
 } from 'recharts';
 
-export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => void }> = () => {
+export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => void }> = ({
+  onViewCandidateReport,
+}) => {
   const [activeTab, setActiveTab] = useState<'analytics' | 'candidates' | 'templates' | 'scoring' | 'audit'>('analytics');
   const [analytics, setAnalytics] = useState<(AdminAnalytics & { users: User[] }) | null>(null);
   const [templates, setTemplates] = useState<InterviewTemplate[]>([]);
   const [scoringConfig, setScoringConfig] = useState<ScoringConfig | null>(null);
   const [auditEvents, setAuditEvents] = useState<IntegrityEvent[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [dbConnected, setDbConnected] = useState<boolean | null>(null);
+
+  // Candidate / interview drill-down state
+  const [candidateDetail, setCandidateDetail] = useState<{ candidate: User; interviews: Interview[] } | null>(null);
+  const [candidateDetailLoading, setCandidateDetailLoading] = useState<boolean>(false);
+  const [candidateDetailError, setCandidateDetailError] = useState<string | null>(null);
+  const [selectedInterviewId, setSelectedInterviewId] = useState<string | null>(null);
+  const [interviewDetail, setInterviewDetail] = useState<{ interview: Interview; integrityEvents: IntegrityEvent[] } | null>(null);
+  const [interviewDetailLoading, setInterviewDetailLoading] = useState<boolean>(false);
 
   // Template creation form state
   const [newTemplateRole, setNewTemplateRole] = useState('');
@@ -81,6 +98,13 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
         setTemplates(tmplData);
         setScoringConfig(scoreData);
         setAuditEvents(auditData.events || []);
+
+        try {
+          const status = await api.getDatabaseStatus();
+          setDbConnected(!!status.connected);
+        } catch {
+          setDbConnected(null);
+        }
 
         if (scoreData) {
           setTechWeight(scoreData.weightTechnical || 30);
@@ -148,6 +172,47 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
     } catch {}
   };
 
+  const openCandidateDetail = async (candidateId: string) => {
+    setCandidateDetailLoading(true);
+    setCandidateDetailError(null);
+    setSelectedInterviewId(null);
+    setInterviewDetail(null);
+    try {
+      const detail = await api.getAdminCandidateDetail(candidateId);
+      setCandidateDetail(detail);
+    } catch (err: any) {
+      setCandidateDetailError(err?.message || 'Failed to load candidate drill-down.');
+    } finally {
+      setCandidateDetailLoading(false);
+    }
+  };
+
+  const closeCandidateDetail = () => {
+    setCandidateDetail(null);
+    setCandidateDetailError(null);
+    setSelectedInterviewId(null);
+    setInterviewDetail(null);
+  };
+
+  const toggleInterviewDetail = async (interviewId: string) => {
+    if (selectedInterviewId === interviewId) {
+      setSelectedInterviewId(null);
+      setInterviewDetail(null);
+      return;
+    }
+    setSelectedInterviewId(interviewId);
+    setInterviewDetail(null);
+    setInterviewDetailLoading(true);
+    try {
+      const detail = await api.getAdminInterviewDetail(interviewId);
+      setInterviewDetail(detail);
+    } catch {
+      setInterviewDetail(null);
+    } finally {
+      setInterviewDetailLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-20 flex items-center justify-center">
@@ -177,6 +242,23 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
       u.email.toLowerCase().includes(candidateSearch.toLowerCase()) ||
       (u.targetRole || '').toLowerCase().includes(candidateSearch.toLowerCase())
   );
+
+  // Integrity events arrive sorted newest-first; group them into day buckets for
+  // a chronological audit timeline while preserving order within each day.
+  const auditGroups: { day: string; events: IntegrityEvent[] }[] = [];
+  const auditByDay = new Map<string, IntegrityEvent[]>();
+  for (const ev of auditEvents) {
+    const day = new Date(ev.createdAt).toLocaleDateString('en-US', {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+    const list = auditByDay.get(day) || [];
+    list.push(ev);
+    auditByDay.set(day, list);
+  }
+  for (const [day, events] of auditByDay) auditGroups.push({ day, events });
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in text-[#e5e7eb]">
@@ -344,79 +426,262 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
         </div>
       )}
 
-      {/* 3. TAB 2: CANDIDATE MANAGEMENT */}
+      {/* 3. TAB 2: CANDIDATE MANAGEMENT + DRILL-DOWN */}
       {activeTab === 'candidates' && (
         <div className="bg-[#121215] border border-[#27272a] rounded-3xl p-6 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-base font-bold text-white">
-                Registered Candidates ({filteredUsers.length})
-              </h3>
-              <p className="text-xs text-zinc-400">
-                Inspect candidate performance benchmarks and target competencies
-              </p>
-            </div>
+          {candidateDetail ? (
+            <>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <button
+                    onClick={closeCandidateDetail}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-white transition"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Back to all candidates</span>
+                  </button>
+                  <h3 className="text-base font-bold text-white mt-2 flex items-center gap-2">
+                    {candidateDetail.candidate.name}
+                    <span className="text-[10px] font-semibold text-zinc-400">
+                      {candidateDetail.candidate.email}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    {candidateDetail.interviews.length} interview
+                    {candidateDetail.interviews.length === 1 ? '' : 's'} on record · Target:{' '}
+                    {candidateDetail.candidate.targetRole || 'Not set'} · {candidateDetail.candidate.experienceLevel || 'mid'}
+                  </p>
+                </div>
+              </div>
 
-            <div className="relative w-full sm:w-64">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={candidateSearch}
-                onChange={(e) => setCandidateSearch(e.target.value)}
-                placeholder="Search candidate name or email..."
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-[#18181c] border border-[#27272a] rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-          </div>
+              {candidateDetail.interviews.length === 0 ? (
+                <div className="p-8 text-center bg-[#18181c] rounded-xl border border-dashed border-[#27272a]">
+                  <p className="text-sm font-medium text-zinc-300">No interviews on record for this candidate.</p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {candidateDetail.interviews.map((intv) => {
+                    const expanded = selectedInterviewId === intv.id;
+                    const reportScore = intv.report?.overallScore;
+                    const isPractice = !!intv.isPractice;
+                    return (
+                      <div key={intv.id} className="border border-[#27272a] rounded-2xl overflow-hidden bg-[#18181c]">
+                        <button
+                          onClick={() => toggleInterviewDetail(intv.id)}
+                          className="w-full p-4 text-left hover:bg-[#202026] transition flex items-center justify-between gap-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                isPractice
+                                  ? 'bg-amber-950/80 text-amber-300 border border-amber-800/60'
+                                  : intv.status === 'completed'
+                                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/60'
+                                  : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                              }`}
+                            >
+                              {isPractice ? 'practice' : intv.status}
+                            </span>
+                            <div>
+                              <div className="text-xs font-bold text-white">{intv.jobRole}</div>
+                              <div className="text-[10px] text-zinc-400 mt-0.5">
+                                {new Date(intv.createdAt).toLocaleString()} · {intv.totalQuestions} questions
+                                {typeof reportScore === 'number' ? ` · Score ${reportScore}` : ''}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {typeof reportScore === 'number' && (
+                              <span className="text-sm font-black text-blue-400">{reportScore}%</span>
+                            )}
+                            {expanded ? (
+                              <ChevronUp className="w-4 h-4 text-zinc-400" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-zinc-400" />
+                            )}
+                          </div>
+                        </button>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-[#27272a] text-zinc-400 uppercase font-semibold">
-                <tr>
-                  <th className="py-3 px-3">Candidate</th>
-                  <th className="py-3 px-3">Target Role</th>
-                  <th className="py-3 px-3">Experience</th>
-                  <th className="py-3 px-3">Role Type</th>
-                  <th className="py-3 px-3">Joined Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1e1e24]">
-                {filteredUsers.map((u) => (
-                  <tr key={u.id} className="hover:bg-[#18181c] transition">
-                    <td className="py-3 px-3 flex items-center gap-2.5">
-                      <img
-                        src={u.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.name}`}
-                        alt={u.name}
-                        className="w-7 h-7 rounded-full bg-[#27272a]"
-                      />
-                      <div>
-                        <div className="font-bold text-white">{u.name}</div>
-                        <div className="text-[10px] text-zinc-400">{u.email}</div>
+                        {expanded && (
+                          <div className="px-4 pb-4 border-t border-[#27272a]">
+                            {interviewDetailLoading ? (
+                              <div className="py-6 text-center text-xs text-zinc-400">Loading interview details...</div>
+                            ) : interviewDetail && interviewDetail.interview.id === intv.id ? (
+                              <div className="space-y-4 pt-4 text-xs">
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                                  <div className="p-2 bg-[#121215] border border-[#27272a] rounded-xl">
+                                    <span className="text-zinc-400 block text-[10px]">Status</span>
+                                    <strong className="text-white">{intv.status}</strong>
+                                  </div>
+                                  <div className="p-2 bg-[#121215] border border-[#27272a] rounded-xl">
+                                    <span className="text-zinc-400 block text-[10px]">Responses</span>
+                                    <strong className="text-white">
+                                      {interviewDetail.interview.answers?.length ?? 0}
+                                    </strong>
+                                  </div>
+                                  <div className="p-2 bg-[#121215] border border-[#27272a] rounded-xl">
+                                    <span className="text-zinc-400 block text-[10px]">Avg. Score</span>
+                                    <strong className="text-white">
+                                      {typeof reportScore === 'number' ? `${reportScore}%` : '—'}
+                                    </strong>
+                                  </div>
+                                  <div className="p-2 bg-[#121215] border border-[#27272a] rounded-xl">
+                                    <span className="text-zinc-400 block text-[10px]">Integrity</span>
+                                    <strong className="text-white">
+                                      {interviewDetail.integrityEvents.length} event
+                                      {interviewDetail.integrityEvents.length === 1 ? '' : 's'}
+                                    </strong>
+                                  </div>
+                                </div>
+
+                                {typeof onViewCandidateReport === 'function' && !isPractice && (
+                                  <button
+                                    onClick={() => onViewCandidateReport(intv.id)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition"
+                                  >
+                                    <FileText className="w-3.5 h-3.5" />
+                                    <span>Open Full Assessment Report</span>
+                                  </button>
+                                )}
+
+                                {/* Real transcripts & evaluations */}
+                                {(interviewDetail.interview.questions || []).map((q) => {
+                                  const ans = (interviewDetail.interview.answers || []).find((a) => a.questionId === q.id);
+                                  const ev = (interviewDetail.interview.evaluations || []).find((e) => e.questionId === q.id);
+                                  if (!ans) return null;
+                                  return (
+                                    <div key={q.id} className="p-3 bg-[#121215] border border-[#27272a] rounded-xl space-y-1.5">
+                                      <div className="text-[11px] font-bold text-white">{q.questionText}</div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+                                          Spoken Transcript
+                                        </span>
+                                        {ev && <span className={`text-[11px] font-bold ${ev.overallScore >= 70 ? 'text-emerald-400' : 'text-amber-400'}`}>{ev.overallScore}%</span>}
+                                      </div>
+                                      <p className="text-zinc-300 leading-relaxed font-mono">{ans.transcript}</p>
+                                      {ev && (
+                                        <p className="text-[11px] text-zinc-400 border-t border-[#27272a] pt-1.5">{ev.feedback}</p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                {interviewDetail.integrityEvents.length > 0 && (
+                                  <div className="space-y-1.5">
+                                    <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                                      Integrity events for this interview
+                                    </span>
+                                    {interviewDetail.integrityEvents.map((ev) => (
+                                      <div key={ev.id} className="p-2 bg-[#18181c] rounded-lg border border-[#27272a] flex items-start gap-2 font-mono">
+                                        <span className="text-blue-400">{new Date(ev.createdAt).toLocaleTimeString('en-US', { hour12: false })}</span>
+                                        <span className="px-1.5 py-0.5 text-[9px] bg-[#222228] border border-[#33333d] rounded font-semibold uppercase tracking-wider">{ev.eventType}</span>
+                                        <span className="text-zinc-300 flex-1">{ev.details || ev.eventType}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="py-6 text-center text-xs text-zinc-400">
+                                Could not load details for this interview.
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </td>
-                    <td className="py-3 px-3 text-zinc-300 font-medium">
-                      {u.targetRole || 'Full-Stack Developer'}
-                    </td>
-                    <td className="py-3 px-3 uppercase text-zinc-400">{u.experienceLevel || 'mid'}</td>
-                    <td className="py-3 px-3">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          u.role === 'admin'
-                            ? 'bg-purple-950/80 text-purple-300 border border-purple-800/60'
-                            : 'bg-blue-950/80 text-blue-300 border border-blue-800/60'
-                        }`}
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    Registered Candidates ({filteredUsers.length})
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    Click a candidate to drill down into their real interview records, transcripts, and evaluations
+                  </p>
+                </div>
+
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={candidateSearch}
+                    onChange={(e) => setCandidateSearch(e.target.value)}
+                    placeholder="Search candidate name or email..."
+                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-[#18181c] border border-[#27272a] rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {candidateDetailError && (
+                <div className="p-3 rounded-xl bg-red-950/40 border border-red-800/60 text-red-300 text-xs">
+                  {candidateDetailError}
+                </div>
+              )}
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-[#27272a] text-zinc-400 uppercase font-semibold">
+                    <tr>
+                      <th className="py-3 px-3">Candidate</th>
+                      <th className="py-3 px-3">Target Role</th>
+                      <th className="py-3 px-3">Experience</th>
+                      <th className="py-3 px-3">Role Type</th>
+                      <th className="py-3 px-3">Joined Date</th>
+                      <th className="py-3 px-3" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#1e1e24]">
+                    {filteredUsers.map((u) => (
+                      <tr
+                        key={u.id}
+                        onClick={() => openCandidateDetail(u.id)}
+                        className="hover:bg-[#18181c] transition cursor-pointer group"
                       >
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-zinc-400">
-                      {new Date(u.createdAt).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                        <td className="py-3 px-3 flex items-center gap-2.5">
+                          <img
+                            src={u.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.name}`}
+                            alt={u.name}
+                            className="w-7 h-7 rounded-full bg-[#27272a]"
+                          />
+                          <div>
+                            <div className="font-bold text-white">{u.name}</div>
+                            <div className="text-[10px] text-zinc-400">{u.email}</div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-zinc-300 font-medium">
+                          {u.targetRole || 'Full-Stack Developer'}
+                        </td>
+                        <td className="py-3 px-3 uppercase text-zinc-400">{u.experienceLevel || 'mid'}</td>
+                        <td className="py-3 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              u.role === 'admin'
+                                ? 'bg-purple-950/80 text-purple-300 border border-purple-800/60'
+                                : 'bg-blue-950/80 text-blue-300 border border-blue-800/60'
+                            }`}
+                          >
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-zinc-400">
+                          {new Date(u.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="py-3 px-3 text-right text-zinc-500 group-hover:text-blue-400">
+                          {candidateDetailLoading ? 'Loading...' : 'Inspect →'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -675,7 +940,36 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
             </span>
           </div>
 
-          {auditEvents.length === 0 ? (
+          <div
+            className={`p-3 rounded-xl border flex items-start gap-2 text-xs ${
+              dbConnected === false
+                ? 'bg-amber-950/30 border-amber-800/50 text-amber-200'
+                : dbConnected === true
+                ? 'bg-emerald-950/30 border-emerald-800/50 text-emerald-200'
+                : 'bg-[#18181c] border-[#27272a] text-zinc-300'
+            }`}
+          >
+            {dbConnected === false ? (
+              <>
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>
+                  MongoDB is not connected. This audit history is held in memory for the current
+                  server session and may be lost on restart. Connect MongoDB and re-sync to persist it.
+                </span>
+              </>
+            ) : dbConnected === true ? (
+              <>
+                <Database className="w-4 h-4 shrink-0" />
+                <span>
+                  Audit history is persisted to MongoDB and restored automatically after a restart.
+                </span>
+              </>
+            ) : (
+              <span>Audit history reflects this session's in-memory records.</span>
+            )}
+          </div>
+
+          {auditGroups.length === 0 ? (
             <div className="p-8 text-center bg-[#18181c] rounded-xl border border-dashed border-[#27272a]">
               <p className="text-sm font-medium text-zinc-300">
                 No integrity events recorded yet.
@@ -685,19 +979,36 @@ export const AdminDashboard: React.FC<{ onViewCandidateReport?: (id: string) => 
               </p>
             </div>
           ) : (
-            <div className="space-y-2.5 font-mono text-xs text-zinc-300">
-              {auditEvents.map((ev) => (
-                <div
-                  key={ev.id}
-                  className="p-3 bg-[#18181c] rounded-xl border border-[#27272a] flex items-start gap-3"
-                >
-                  <span className="text-blue-400 font-bold">
-                    {new Date(ev.createdAt).toLocaleTimeString('en-US', { hour12: false })}
-                  </span>
-                  <span className="px-1.5 py-0.5 text-[10px] bg-[#222228] border border-[#33333d] rounded font-semibold text-zinc-200 uppercase">
-                    {ev.eventType}
-                  </span>
-                  <span className="text-zinc-300 flex-1">{ev.details || ev.eventType}</span>
+            <div className="space-y-5">
+              {auditGroups.map((group) => (
+                <div key={group.day} className="space-y-2">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 border-b border-[#27272a] pb-1.5">
+                    {group.day}
+                  </div>
+                  <div className="space-y-2.5 font-mono text-xs text-zinc-300">
+                    {group.events.map((ev, idx) => (
+                      <div key={ev.id} className="space-y-1">
+                        {idx === 0 && (
+                          <div className="flex items-center gap-2 text-[10px]">
+                            <span className="w-2 h-2 rounded-full bg-blue-500/80" />
+                            <span className="text-zinc-200">{ev.interviewId}</span>
+                            <span className="px-1.5 py-0.5 text-[9px] bg-[#222228] border border-[#33333d] rounded font-semibold uppercase">
+                              interview
+                            </span>
+                          </div>
+                        )}
+                        <div className="p-3 bg-[#18181c] rounded-xl border border-[#27272a] flex items-start gap-3">
+                          <span className="text-blue-400 font-bold">
+                            {new Date(ev.createdAt).toLocaleTimeString('en-US', { hour12: false })}
+                          </span>
+                          <span className="px-1.5 py-0.5 text-[10px] bg-[#222228] border border-[#33333d] rounded font-semibold text-zinc-200 uppercase">
+                            {ev.eventType}
+                          </span>
+                          <span className="text-zinc-300 flex-1">{ev.details || ev.eventType}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

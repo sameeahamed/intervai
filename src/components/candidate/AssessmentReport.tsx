@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../services/api.ts';
 import { exportReportToCSV, printOrExportPDF } from '../../utils/export.ts';
+import { computeSpeechAnalytics } from '../../utils/speechAnalytics.ts';
 import {
   Interview,
   AssessmentReport as ReportType,
@@ -28,7 +29,9 @@ import {
   ChevronDown,
   ChevronUp,
   MessageSquare,
-  FileText
+  FileText,
+  Mic,
+  Activity
 } from 'lucide-react';
 import {
   RadarChart,
@@ -212,6 +215,8 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
     { subject: 'Visual Presence', score: report.visualEngagementScore ?? 0, fullMark: 100 },
   ];
 
+  const speech = computeSpeechAnalytics(answers);
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in print:p-0 text-[#e5e7eb]">
       {/* 1. TOP HEADER & EXPORT ACTIONS */}
@@ -392,6 +397,95 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
             </div>
           )}
         </div>
+      </div>
+
+      {/* 3b. SPOKEN DELIVERY ANALYTICS (real transcript + recorded duration data) */}
+      <div className="p-6 bg-[#121215] border border-[#27272a] rounded-3xl shadow-sm space-y-4">
+        <div>
+          <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+            <Mic className="w-4 h-4 text-cyan-400" />
+            Spoken Delivery Analytics
+          </h3>
+          <p className="text-xs text-zinc-400 mt-0.5">
+            Computed from your recorded answer transcripts and durations. These are text-based delivery
+            signals only and are not a judgement of emotion, confidence, or personality.
+          </p>
+        </div>
+
+        {!speech.hasTranscripts ? (
+          <div className="p-6 text-center bg-[#18181c] rounded-xl border border-dashed border-[#27272a]">
+            <p className="text-sm text-zinc-300">
+              No transcripts are available for this session, so delivery metrics cannot be computed.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-4 bg-[#18181c] border border-[#27272a] rounded-2xl space-y-1">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">
+                  Filler Words
+                </span>
+                <div className="text-3xl font-black text-white">{speech.fillerWordCount}</div>
+                <p className="text-[10px] text-zinc-500">From the tracked filler vocabulary</p>
+              </div>
+
+              <div className="p-4 bg-[#18181c] border border-[#27272a] rounded-2xl space-y-1">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">
+                  Words Spoken
+                </span>
+                <div className="text-3xl font-black text-white">{speech.totalWords}</div>
+                <p className="text-[10px] text-zinc-500">Across {speech.perAnswer.length} recorded answer{speech.perAnswer.length === 1 ? '' : 's'}</p>
+              </div>
+
+              <div className="p-4 bg-[#18181c] border border-[#27272a] rounded-2xl space-y-1">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">
+                  Speaking Pace
+                </span>
+                {speech.wordsPerMinute === null ? (
+                  <>
+                    <div className="text-2xl font-black text-zinc-500 flex items-center gap-1.5">
+                      <Activity className="w-5 h-5" />
+                      N/A
+                    </div>
+                    <p className="text-[10px] text-zinc-500">No recorded duration available</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-3xl font-black text-white">
+                      {speech.wordsPerMinute}
+                      <span className="text-sm font-normal text-zinc-400 ml-1">wpm</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-500">
+                      {Math.floor(speech.totalDurationSeconds / 60)}m {Math.round(speech.totalDurationSeconds % 60)}s of recorded audio
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {speech.fillerWords.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {speech.fillerWords.map((f) => (
+                  <span
+                    key={f.word}
+                    className="px-2 py-0.5 bg-[#222228] border border-[#33333d] text-zinc-200 text-[10px] rounded-md font-medium"
+                  >
+                    {f.word} ×{f.count}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-zinc-400">
+                No filler words from the tracked vocabulary were detected.
+              </p>
+            )}
+
+            <p className="text-[10px] text-zinc-500 leading-relaxed">
+              Filler vocabulary: {speech.fillerVocabulary.join(', ')}. Pace is calculated as spoken words divided by
+              minutes of recorded audio, and is shown as unavailable when no valid duration was recorded.
+            </p>
+          </>
+        )}
       </div>
 
       {/* 4. QUESTION-BY-QUESTION DEEP DIVE (TRANSCRIPTS & MODEL ANSWERS) */}

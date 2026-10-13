@@ -39,6 +39,27 @@ function AppContent() {
   const [privacyModalOpen, setPrivacyModalOpen] = useState<boolean>(false);
   const [databaseModalOpen, setDatabaseModalOpen] = useState<boolean>(false);
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
+  const [resetToken, setResetToken] = useState<string | null>(null);
+
+  // Support arriving from a password reset link (?resetToken=...): open the auth
+  // modal directly in "set a new password" mode.
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get('resetToken');
+    if (token) {
+      setResetToken(token);
+      setAuthModalOpen(true);
+    }
+  }, []);
+
+  const closeAuthModal = () => {
+    setAuthModalOpen(false);
+    if (resetToken) {
+      setResetToken(null);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('resetToken');
+      window.history.replaceState({}, '', url.pathname + url.search);
+    }
+  };
 
   const handleStartSetup = () => {
     if (!isAuthenticated) {
@@ -151,9 +172,11 @@ function AppContent() {
       />
 
       <AuthModal
+        key={resetToken ? `reset-${resetToken}` : 'auth'}
         isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
+        onClose={closeAuthModal}
         onSuccess={() => setCurrentView('dashboard')}
+        resetToken={resetToken}
       />
     </div>
   );

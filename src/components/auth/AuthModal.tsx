@@ -4,13 +4,28 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
-import { X, LogIn, UserPlus, Sparkles, AlertCircle, CheckCircle2, ShieldCheck, User } from 'lucide-react';
+import {
+  X,
+  LogIn,
+  UserPlus,
+  Sparkles,
+  AlertCircle,
+  CheckCircle2,
+  ShieldCheck,
+  User,
+  KeyRound,
+  Mail,
+  ArrowLeft,
+} from 'lucide-react';
+
+type AuthMode = 'login' | 'register' | 'forgot' | 'reset';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialMode?: 'login' | 'register';
   onSuccess?: () => void;
+  resetToken?: string | null;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -18,28 +33,44 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   initialMode = 'login',
   onSuccess,
+  resetToken = null,
 }) => {
-  const { login, register, quickDemoLogin } = useAuth();
-  const [mode, setMode] = useState<'login' | 'register'>(initialMode);
+  const { login, register, forgotPassword, resetPassword, quickDemoLogin } = useAuth();
+  const [mode, setMode] = useState<AuthMode>(resetToken ? 'reset' : initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [targetRole, setTargetRole] = useState('Full-Stack Developer');
   const [experienceLevel, setExperienceLevel] = useState('mid');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [devResetToken, setDevResetToken] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const resetLocalFeedback = () => {
+    setError(null);
+    setNotice(null);
+    setDevResetToken(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     setLoading(true);
 
     try {
       if (mode === 'login') {
         await login(email, password);
-      } else {
+        if (onSuccess) onSuccess();
+        onClose();
+        return;
+      }
+
+      if (mode === 'register') {
         await register({
           name,
           email,
@@ -49,9 +80,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           experienceLevel,
           skills: ['Problem Solving', 'System Design', 'Core Domain'],
         });
+        if (onSuccess) onSuccess();
+        onClose();
+        return;
       }
-      if (onSuccess) onSuccess();
-      onClose();
+
+      if (mode === 'forgot') {
+        const res = await forgotPassword(email);
+        setNotice(res.message);
+        if (res.devResetToken) setDevResetToken(res.devResetToken);
+        return;
+      }
+
+      if (mode === 'reset') {
+        if (!resetToken) {
+          setError('This reset link is missing its token. Please request a new password reset link.');
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('The two passwords do not match.');
+          return;
+        }
+        const res = await resetPassword(resetToken, password);
+        setNotice(res.message);
+        setMode('login');
+        return;
+      }
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please check your credentials.');
     } finally {
@@ -91,16 +145,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <Sparkles className="w-6 h-6" />
           </div>
           <h3 className="text-xl font-bold text-white">
-            {mode === 'login' ? 'Welcome Back to IntervAI' : 'Create Candidate Account'}
+            {mode === 'login' && 'Welcome Back to IntervAI'}
+            {mode === 'register' && 'Create Candidate Account'}
+            {mode === 'forgot' && 'Reset Your Password'}
+            {mode === 'reset' && 'Set a New Password'}
           </h3>
           <p className="text-xs text-zinc-400 mt-1">
-            {mode === 'login'
-              ? 'Sign in to access your interview simulator and analytics'
-              : 'Join the AI-powered voice interview preparation platform'}
+            {mode === 'login' && 'Sign in to access your interview simulator and analytics'}
+            {mode === 'register' && 'Join the AI-powered voice interview preparation platform'}
+            {mode === 'forgot' && 'Enter your email and we will send a reset link if an account exists'}
+            {mode === 'reset' && 'Choose a new password for your account'}
           </p>
         </div>
 
-        {/* Tab switch */}
+        {/* Tab switch (login / register only) */}
+        {(mode === 'login' || mode === 'register') && (
         <div className="flex bg-[#18181c] border border-[#27272a] p-1 rounded-xl mb-5">
           <button
             type="button"
@@ -131,6 +190,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             Register
           </button>
         </div>
+        )}
+
+        {(mode === 'forgot' || mode === 'reset') && (
+          <button
+            type="button"
+            onClick={() => {
+              resetLocalFeedback();
+              setMode('login');
+            }}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-white transition mb-4"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to sign in</span>
+          </button>
+        )}
+
+        {notice && (
+          <div className="mb-4 p-3 rounded-xl bg-emerald-950/40 border border-emerald-800/60 text-emerald-300 text-xs space-y-1.5">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{notice}</span>
+            </div>
+            {devResetToken && (
+              <p className="break-all text-[10px] text-emerald-200/80 font-mono">
+                Dev reset token: {devResetToken}
+              </p>
+            )}
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 p-3 rounded-xl bg-red-950/40 border border-red-800/60 text-red-300 text-xs flex items-center gap-2">
@@ -157,33 +245,71 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
-              Email Address
-            </label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="candidate@intervai.com"
-              className="w-full px-3.5 py-2 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
+          {mode !== 'reset' && (
+            <div>
+              <label className="block text-xs font-medium text-zinc-300 mb-1">
+                Email Address
+              </label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="candidate@intervai.com"
+                className="w-full px-3.5 py-2 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+          )}
 
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
-              Password
-            </label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full px-3.5 py-2 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
+          {mode !== 'forgot' && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-zinc-300">
+                  {mode === 'reset' ? 'New Password' : 'Password'}
+                </label>
+                {mode === 'login' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetLocalFeedback();
+                      setMode('forgot');
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-400 hover:text-blue-300 transition"
+                  >
+                    <KeyRound className="w-3 h-3" />
+                    <span>Forgot password?</span>
+                  </button>
+                )}
+              </div>
+              <input
+                type="password"
+                required
+                minLength={mode === 'reset' ? 8 : undefined}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-3.5 py-2 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+          )}
+
+          {mode === 'reset' && (
+            <div>
+              <label className="block text-xs font-medium text-zinc-300 mb-1">
+                Confirm New Password
+              </label>
+              <input
+                type="password"
+                required
+                minLength={8}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-3.5 py-2 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <p className="text-[10px] text-zinc-500 mt-1">At least 8 characters.</p>
+            </div>
+          )}
 
           {mode === 'register' && (
             <div className="grid grid-cols-2 gap-3 pt-1">
@@ -229,37 +355,50 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             disabled={loading}
             className="w-full py-2.5 px-4 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md transition flex items-center justify-center gap-2 mt-4 disabled:opacity-50"
           >
-            {mode === 'login' ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
-            {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
+            {mode === 'login' && <LogIn className="w-4 h-4" />}
+            {mode === 'register' && <UserPlus className="w-4 h-4" />}
+            {mode === 'forgot' && <Mail className="w-4 h-4" />}
+            {mode === 'reset' && <KeyRound className="w-4 h-4" />}
+            {loading
+              ? 'Please wait...'
+              : mode === 'login'
+              ? 'Sign In'
+              : mode === 'register'
+              ? 'Create Account'
+              : mode === 'forgot'
+              ? 'Send Reset Link'
+              : 'Reset Password'}
           </button>
         </form>
 
         {/* 1-Click Presentation Demo Logins */}
-        <div className="mt-6 pt-4 border-t border-[#27272a]">
-          <p className="text-[11px] font-semibold text-center text-zinc-400 mb-2.5">
-            ⚡ Quick 1-Click Presentation Demo Logins:
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('candidate')}
-              disabled={loading}
-              className="px-3 py-2 text-xs font-semibold bg-blue-950/60 text-blue-300 rounded-xl border border-blue-800/60 hover:bg-blue-900/60 transition flex items-center justify-center gap-1.5"
-            >
-              <User className="w-3.5 h-3.5" />
-              Demo Candidate
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('admin')}
-              disabled={loading}
-              className="px-3 py-2 text-xs font-semibold bg-purple-950/60 text-purple-300 rounded-xl border border-purple-800/60 hover:bg-purple-900/60 transition flex items-center justify-center gap-1.5"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Demo Admin
-            </button>
+        {(mode === 'login' || mode === 'register') && (
+          <div className="mt-6 pt-4 border-t border-[#27272a]">
+            <p className="text-[11px] font-semibold text-center text-zinc-400 mb-2.5">
+              ⚡ Quick 1-Click Presentation Demo Logins:
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleQuickDemo('candidate')}
+                disabled={loading}
+                className="px-3 py-2 text-xs font-semibold bg-blue-950/60 text-blue-300 rounded-xl border border-blue-800/60 hover:bg-blue-900/60 transition flex items-center justify-center gap-1.5"
+              >
+                <User className="w-3.5 h-3.5" />
+                Demo Candidate
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickDemo('admin')}
+                disabled={loading}
+                className="px-3 py-2 text-xs font-semibold bg-purple-950/60 text-purple-300 rounded-xl border border-purple-800/60 hover:bg-purple-900/60 transition flex items-center justify-center gap-1.5"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Demo Admin
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

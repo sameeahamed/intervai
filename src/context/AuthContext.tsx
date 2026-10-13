@@ -13,6 +13,8 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, pass: string) => Promise<void>;
   register: (params: any) => Promise<void>;
+  forgotPassword: (email: string) => Promise<{ message: string; devResetToken?: string; devResetExpiresAt?: string }>;
+  resetPassword: (token: string, password: string) => Promise<{ message: string }>;
   logout: () => void;
   quickDemoLogin: (role: UserRole) => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
@@ -68,6 +70,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const forgotPassword = async (email: string) => {
+    return api.forgotPassword(email);
+  };
+
+  const resetPassword = async (token: string, password: string) => {
+    return api.resetPassword({ token, password });
+  };
+
   const logout = () => {
     api.clearToken();
     setUser(null);
@@ -103,6 +113,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         login,
         register,
+        forgotPassword,
+        resetPassword,
         logout,
         quickDemoLogin,
         updateUser,

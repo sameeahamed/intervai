@@ -3,10 +3,23 @@
  * Replaces the previous unsigned Base64 token scheme.
  */
 
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const TOKEN_TTL_MS = 60 * 60 * 24 * 7 * 1000; // 7 days
 const MIN_SECRET_LENGTH = 32;
+
+// Password reset tokens are high-entropy (256-bit) one-time secrets with a short
+// lifetime. They are stored only as a SHA-256 digest so a leaked store cannot be
+// replayed, and are never logged or returned in production.
+export const RESET_TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+export function generatePasswordResetToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+export function hashPasswordResetToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 interface ResolvedSecret {
   secret: string;

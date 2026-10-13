@@ -94,6 +94,27 @@ class ApiService {
     });
   }
 
+  async forgotPassword(email: string): Promise<{
+    message: string;
+    devResetToken?: string;
+    devResetExpiresAt?: string;
+  }> {
+    return this.request<{ message: string; devResetToken?: string; devResetExpiresAt?: string }>(
+      '/api/auth/forgot-password',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }
+    );
+  }
+
+  async resetPassword(params: { token: string; password: string }): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  }
+
   async purgeUserData(): Promise<{ message: string }> {
     return this.request<{ message: string }>('/api/user/data', {
       method: 'DELETE',
@@ -266,6 +287,22 @@ class ApiService {
 
   async getIntegrityEvents(): Promise<{ events: IntegrityEvent[] }> {
     return this.request<{ events: IntegrityEvent[] }>('/api/admin/integrity-events');
+  }
+
+  async getAdminCandidateDetail(
+    candidateId: string
+  ): Promise<{ candidate: User; interviews: Interview[] }> {
+    return this.request<{ candidate: User; interviews: Interview[] }>(
+      `/api/admin/candidates/${candidateId}`
+    );
+  }
+
+  async getAdminInterviewDetail(
+    interviewId: string
+  ): Promise<{ interview: Interview; integrityEvents: IntegrityEvent[] }> {
+    return this.request<{ interview: Interview; integrityEvents: IntegrityEvent[] }>(
+      `/api/admin/interviews/${interviewId}`
+    );
   }
 
   // TTS Proxy

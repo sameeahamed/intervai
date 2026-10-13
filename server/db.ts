@@ -33,6 +33,11 @@ import {
   mongoState,
   isMongoConnected
 } from './mongodb.ts';
+import {
+  generatePasswordResetToken,
+  hashPasswordResetToken,
+  RESET_TOKEN_TTL_MS
+} from './auth.ts';
 
 // Safe non-blocking write helper to ensure zero buffering timeouts
 function safeMongoWrite(opName: string, operation: () => Promise<any>) {
@@ -83,6 +88,8 @@ class Database {
   private reports: Map<string, AssessmentReport> = new Map(); // key = interviewId
   private integrityEvents: Map<string, IntegrityEvent[]> = new Map(); // key = interviewId
   private templates: Map<string, InterviewTemplate> = new Map();
+  // Single-use password reset tokens, keyed by SHA-256 digest of the raw token.
+  private passwordResetTokens: Map<string, { userId: string; email: string; expiresAt: number; usedAt?: number }> = new Map();
   private scoringConfig: ScoringConfig = {
     id: 'default',
     weightTechnical: 0.35,
@@ -313,6 +320,22 @@ class Database {
           weightVisualEngagement: mongoConfig.weightVisualEngagement,
           passingScore: mongoConfig.passingScore
         };
+      }
+
+      // 10. Sync Integrity Events (real audit history). Restoring these is what
+      // keeps the admin audit log intact across server restarts.
+      const mongoIntegrityEvents = await IntegrityEventModel.find({}).lean();
+      for (const ev of mongoIntegrityEvents) {
+        const intvId = ev.interviewId;
+        const list = this.integrityEvents.get(intvId) || [];
+        list.push({
+          id: ev.id || (ev as any)._id,
+          interviewId: ev.interviewId,
+          eventType: ev.eventType as any,
+          details: ev.details,
+          createdAt: ev.createdAt
+        });
+        this.integrityEvents.set(intvId, list);
       }
 
       this.isInitialized = true;
@@ -854,6 +877,58 @@ class Database {
       return user;
     }
     return null;
+  }
+
+  /**
+   * Issue a single-use password reset token for an existing account.
+   * Returns null when the email is unknown so callers can respond generically.
+   * Only the SHA-256 digest is retained; the raw token is returned to the caller.
+   */
+  public createPasswordResetToken(email: string): { token: string; expiresAt: number } | null {
+    const user = this.getUserByEmail(email);
+    if (!user) return null;
+
+    // Opportunistic cleanup of expired/consumed tokens.
+    const now = Date.now();
+    for (const [hash, record] of this.passwordResetTokens.entries()) {
+      if (record.expiresAt < now || record.usedAt) {
+        this.passwordResetTokens.delete(hash);
+      }
+    }
+
+    const token = generatePasswordResetToken();
+    const tokenHash = hashPasswordResetToken(token);
+    const expiresAt = now + RESET_TOKEN_TTL_MS;
+    this.passwordResetTokens.set(tokenHash, { userId: user.id, email: user.email, expiresAt });
+    return { token, expiresAt };
+  }
+
+  /**
+   * Validate and consume a reset token. Marks it used on success so it can only
+   * be redeemed once; expired or unknown tokens are rejected.
+   */
+  public consumePasswordResetToken(token: string): { ok: true; userId: string } | { ok: false; reason: 'invalid' | 'expired' | 'used' } {
+    const tokenHash = hashPasswordResetToken(token);
+    const record = this.passwordResetTokens.get(tokenHash);
+    if (!record) return { ok: false, reason: 'invalid' };
+    if (record.usedAt) return { ok: false, reason: 'used' };
+    if (record.expiresAt < Date.now()) {
+      this.passwordResetTokens.delete(tokenHash);
+      return { ok: false, reason: 'expired' };
+    }
+    record.usedAt = Date.now();
+    return { ok: true, userId: record.userId };
+  }
+
+  public updatePassword(userId: string, newPassword: string): boolean {
+    const user = this.users.get(userId);
+    if (!user) return false;
+    const passwordHash = hashPassword(newPassword);
+    this.userPasswords.set(user.email.toLowerCase().trim(), passwordHash);
+    safeMongoWrite('Password reset save', () =>
+      UserModel.updateOne({ _id: userId }, { $set: { passwordHash } }).exec()
+    );
+    return true;
   }
 
   public registerUser(params: {

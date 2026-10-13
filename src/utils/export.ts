@@ -3,6 +3,7 @@
  */
 
 import { Interview, AssessmentReport, Question, Answer, Evaluation, VisualEngagementMetrics } from '../types/index.ts';
+import { computeSpeechAnalytics } from './speechAnalytics.ts';
 
 export function exportReportToCSV(data: {
   interview: Interview;
@@ -13,6 +14,7 @@ export function exportReportToCSV(data: {
   visualMetrics?: VisualEngagementMetrics;
 }) {
   const { interview, report, questions, answers, evaluations, visualMetrics } = data;
+  const speech = computeSpeechAnalytics(answers);
 
   const rows: string[][] = [
     ['INTERVAI - AI INTERVIEW ASSESSMENT REPORT'],
@@ -41,6 +43,15 @@ export function exportReportToCSV(data: {
     [],
     ['RECOMMENDATIONS'],
     ...report.recommendations.map((r) => [r]),
+    [],
+    ['SPOKEN DELIVERY ANALYTICS (text-based, from transcripts)'],
+    ['Filler Words', `${speech.fillerWordCount}`],
+    ['Words Spoken', `${speech.totalWords}`],
+    [
+      'Speaking Pace (WPM)',
+      speech.wordsPerMinute === null ? 'Unavailable (no recorded duration)' : `${speech.wordsPerMinute} wpm`,
+    ],
+    ['Filler Vocabulary', speech.fillerVocabulary.join(', ')],
     [],
     ['QUESTION-BY-QUESTION BREAKDOWN'],
     [

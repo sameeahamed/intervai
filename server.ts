@@ -15,7 +15,7 @@ import {
   generateFinalAssessmentReport,
   generateSpeechAudio
 } from './server/ai.ts';
-import { Interview, Question, Answer, VisualEngagementMetrics, IntegrityEvent } from './src/types/index.ts';
+import { Interview, Question, Answer, VisualEngagementMetrics, IntegrityEvent, User } from './src/types/index.ts';
 import { createAuthToken, isAuthSecretEphemeral, verifyAuthToken } from './server/auth.ts';
 
 // Helper for lightweight JWT-like token extraction
@@ -52,6 +52,44 @@ function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFuncti
   }
   req.user = user;
   next();
+}
+
+// ---------------------------------------------------------------------------
+// Lightweight in-memory rate limiting (per-process, best-effort).
+// Documented limits:
+//   - Login:            10 attempts / 15 min per (client IP + email)
+//   - Forgot password:   5 requests / 60 min per client IP
+//   - Reset password:   10 attempts / 60 min per client IP
+// Counters live only for the life of the process; a restart clears them.
+// ---------------------------------------------------------------------------
+const LOGIN_RATE_LIMIT = { max: 10, windowMs: 15 * 60 * 1000 };
+const FORGOT_RATE_LIMIT = { max: 5, windowMs: 60 * 60 * 1000 };
+const RESET_RATE_LIMIT = { max: 10, windowMs: 60 * 60 * 1000 };
+
+interface RateBucket {
+  count: number;
+  resetAt: number;
+}
+
+const rateBuckets = new Map<string, RateBucket>();
+
+function clientIp(req: Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  const first = typeof raw === 'string' ? raw.split(',')[0].trim() : '';
+  return first || req.socket?.remoteAddress || 'unknown';
+}
+
+function isRateLimited(key: string, max: number, windowMs: number): boolean {
+  const now = Date.now();
+  const bucket = rateBuckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    rateBuckets.set(key, { count: 1, resetAt: now + windowMs });
+    return false;
+  }
+  if (bucket.count >= max) return true;
+  bucket.count += 1;
+  return false;
 }
 
 const activePrefetches = new Set<string>();
@@ -249,6 +287,11 @@ async function startServer() {
         return res.status(400).json({ error: 'Email and password are required.' });
       }
 
+      const loginKey = `login:${clientIp(req)}:${String(email).toLowerCase().trim()}`;
+      if (isRateLimited(loginKey, LOGIN_RATE_LIMIT.max, LOGIN_RATE_LIMIT.windowMs)) {
+        return res.status(429).json({ error: 'Too many login attempts. Please wait a few minutes and try again.' });
+      }
+
       const user = db.authenticate(email, password);
       if (!user) {
         return res.status(401).json({ error: 'Invalid email or password.' });
@@ -270,13 +313,112 @@ async function startServer() {
     res.json({ user });
   });
 
+  // Only whitelisted, self-editable profile fields are accepted. Identity and
+  // privilege fields (id, email, role, password) can never be modified here.
+  const ALLOWED_PROFILE_FIELDS = [
+    'name',
+    'bio',
+    'targetRole',
+    'experienceLevel',
+    'skills',
+    'resumeText',
+    'avatarUrl',
+    'consentCamera',
+    'consentMicrophone',
+    'consentAiEvaluation'
+  ] as const;
+
   app.put('/api/auth/profile', requireAuth, (req: AuthenticatedRequest, res) => {
     try {
-      const updates = req.body;
-      const updated = db.updateUser(req.user.id, updates);
+      const body = req.body || {};
+      const updates: Record<string, any> = {};
+      for (const field of ALLOWED_PROFILE_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(body, field)) {
+          updates[field] = body[field];
+        }
+      }
+
+      if (typeof updates.name === 'string') {
+        updates.name = updates.name.trim();
+        if (!updates.name) delete updates.name;
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'skills') && !Array.isArray(updates.skills)) {
+        delete updates.skills;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: 'No valid profile fields were provided.' });
+      }
+
+      const updated = db.updateUser(req.user.id, updates as Partial<User>);
       res.json({ user: updated });
     } catch (err: any) {
       res.status(500).json({ error: 'Failed to update profile.' });
+    }
+  });
+
+  // Request a password reset. The public response is always identical so it can
+  // never be used to determine whether an account exists. A reset link is only
+  // surfaced in the response for local development (NODE_ENV !== 'production')
+  // where SMTP is not configured; production never returns the token.
+  const GENERIC_FORGOT_MESSAGE =
+    'If an account exists for that email, a password reset link has been sent.';
+
+  app.post('/api/auth/forgot-password', (req, res) => {
+    try {
+      if (isRateLimited(`forgot:${clientIp(req)}`, FORGOT_RATE_LIMIT.max, FORGOT_RATE_LIMIT.windowMs)) {
+        return res.status(429).json({ error: 'Too many password reset requests. Please try again later.' });
+      }
+
+      const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+      if (!email) {
+        return res.status(400).json({ error: 'Email address is required.' });
+      }
+
+      const result = db.createPasswordResetToken(email);
+
+      // Dev convenience only: surface the token when not in production.
+      if (result && process.env.NODE_ENV !== 'production') {
+        return res.json({
+          message: GENERIC_FORGOT_MESSAGE,
+          devResetToken: result.token,
+          devResetExpiresAt: new Date(result.expiresAt).toISOString()
+        });
+      }
+
+      res.json({ message: GENERIC_FORGOT_MESSAGE });
+    } catch (err: any) {
+      // Never leak account existence on error either.
+      res.json({ message: GENERIC_FORGOT_MESSAGE });
+    }
+  });
+
+  // Redeem a single-use reset token and set a new password.
+  app.post('/api/auth/reset-password', (req, res) => {
+    try {
+      if (isRateLimited(`reset:${clientIp(req)}`, RESET_RATE_LIMIT.max, RESET_RATE_LIMIT.windowMs)) {
+        return res.status(429).json({ error: 'Too many password reset attempts. Please try again later.' });
+      }
+
+      const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+      const password = typeof req.body?.password === 'string' ? req.body.password : '';
+
+      if (!token || !password) {
+        return res.status(400).json({ error: 'A reset token and a new password are required.' });
+      }
+      if (password.length < 8) {
+        return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
+      }
+
+      const consumed = db.consumePasswordResetToken(token);
+      if (!consumed.ok) {
+        return res.status(400).json({ error: 'This reset link is invalid or has expired. Please request a new one.' });
+      }
+
+      db.updatePassword(consumed.userId, password);
+      res.json({ message: 'Your password has been reset. You can now sign in with your new password.' });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to reset password.' });
     }
   });
 
@@ -882,6 +1024,37 @@ async function startServer() {
       res.json({ events: db.getAllIntegrityEvents() });
     } catch (err: any) {
       res.status(500).json({ error: 'Failed to load integrity audit logs.' });
+    }
+  });
+
+  // Admin drill-down: a single candidate plus their full interview records.
+  app.get('/api/admin/candidates/:id', requireAdmin, (req, res) => {
+    try {
+      const candidate = db.getUserById(req.params.id);
+      if (!candidate) {
+        return res.status(404).json({ error: 'Candidate not found.' });
+      }
+      const interviews = db.getCandidateInterviews(candidate.id);
+      res.json({ candidate, interviews });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to load candidate drill-down.' });
+    }
+  });
+
+  // Admin drill-down: a single interview with its full transcript/evaluation data
+  // and its own integrity audit events.
+  app.get('/api/admin/interviews/:id', requireAdmin, (req, res) => {
+    try {
+      const interview = db.getInterview(req.params.id);
+      if (!interview) {
+        return res.status(404).json({ error: 'Interview not found.' });
+      }
+      res.json({
+        interview,
+        integrityEvents: db.getIntegrityEvents(interview.id)
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to load interview drill-down.' });
     }
   });
 

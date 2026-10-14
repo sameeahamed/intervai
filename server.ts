@@ -243,6 +243,7 @@ async function prefetchNextQuestion(interviewId: string) {
         difficultyLevel: questionData.difficultyLevel,
         expectedPoints: questionData.expectedPoints,
         hints: questionData.hints,
+        aiSource: questionData.aiSource,
         createdAt: new Date().toISOString(),
       };
       db.addQuestion(newQuestion);
@@ -756,6 +757,7 @@ async function startServer() {
         difficultyLevel: questionData.difficultyLevel,
         expectedPoints: questionData.expectedPoints,
         hints: questionData.hints,
+        aiSource: questionData.aiSource,
         createdAt: new Date().toISOString()
       };
 
@@ -896,6 +898,7 @@ async function startServer() {
               difficultyLevel: followUpData.difficultyLevel,
               expectedPoints: followUpData.expectedPoints,
               hints: followUpData.hints,
+              aiSource: followUpData.aiSource,
               createdAt: new Date().toISOString()
             };
             followUp = db.addQuestion(followUpQuestion);

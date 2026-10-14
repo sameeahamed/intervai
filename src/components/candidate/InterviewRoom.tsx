@@ -118,6 +118,9 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraStatus, setCameraStatus] = useState<'off' | 'requesting' | 'live' | 'error'>('off');
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [micStatus, setMicStatus] = useState<'off' | 'requesting' | 'live' | 'error'>('off');
+  const [micError, setMicError] = useState<string | null>(null);
+  const [sttAvailable, setSttAvailable] = useState<boolean>(true);
   const [volume, setVolume] = useState<number>(1.0);
   const [frequencyData, setFrequencyData] = useState<Uint8Array | null>(null);
   const [visualState, setVisualState] = useState<VisualAnalysisState | null>(null);
@@ -132,6 +135,12 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const videoStreamRef = useRef<MediaStream | null>(null);
+  const streamingTrackRef = useRef<MediaStreamTrack | null>(null);
+  const cameraRequestInFlightRef = useRef<boolean>(false);
+  const micRequestInFlightRef = useRef<boolean>(false);
+  const isSubmittingRef = useRef<boolean>(false);
+  const isFinishingRef = useRef<boolean>(false);
+  const isMountedRef = useRef<boolean>(true);
   const animFrameRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<any>(null);
 
@@ -143,6 +152,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   // 1. INITIALIZE INTERVIEW SESSION & SERVICES
   useEffect(() => {
     let isMounted = true;
+    isMountedRef.current = true;
 
     async function initSession() {
       try {
@@ -164,6 +174,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
           },
         });
         voiceServiceRef.current = voice;
+        setSttAvailable(voice.isSpeechRecognitionAvailable());
 
         // Initialize Vision Service
         const vision = new VisionService();
@@ -197,7 +208,8 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
     return () => {
       isMounted = false;
-      cleanupResources();
+      isMountedRef.current = false;
+      releaseMediaResources();
     };
   }, [interviewId]);
 
@@ -230,17 +242,27 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     }
   };
 
-  const cleanupResources = () => {
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+  // Release every media resource synchronously. Safe to call during unmount:
+  // it never calls setState, so React never warns about updating an unmounted
+  // component. State resets are handled by callers while still mounted.
+  const releaseMediaResources = () => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
     if (voiceServiceRef.current) voiceServiceRef.current.cleanup();
     if (visionServiceRef.current) visionServiceRef.current.stopAnalysis();
     stopStream(micStreamRef.current);
     stopStream(videoStreamRef.current);
     micStreamRef.current = null;
     videoStreamRef.current = null;
+    streamingTrackRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
-    setCameraStream(null);
+    if (previewVideoRef.current) previewVideoRef.current.srcObject = null;
   };
 
   const stopStream = (stream: MediaStream | null) => {
@@ -270,15 +292,64 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     return 'Could not start the camera. Check permissions and retry.';
   };
 
+  const humanizeMicError = (err: any): string => {
+    const name = err?.name || '';
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      return 'Microphone permission was denied. Allow microphone access for this site, then retry — or type your answers instead.';
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return 'No microphone device was found. Connect a microphone, or type your answers instead.';
+    }
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+      return 'The microphone is already in use by another app or tab. Close it and retry.';
+    }
+    return 'Could not access the microphone. You can still type your answers.';
+  };
+
   // 2. HARDWARE ACCESS & STREAMS
   const startMediaDevices = async () => {
-    // Mic stream
-    try {
-      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      micStreamRef.current = audioStream;
-      if (voiceServiceRef.current) {
-        await voiceServiceRef.current.initMicAnalyser(audioStream);
+    await enableMic();
+    await enableCamera();
+  };
 
+  /**
+   * Acquire the microphone. Validates that a live audio track actually exists
+   * (a resolved permission prompt is not enough) and surfaces recoverable errors.
+   */
+  const enableMic = async (deviceId?: string) => {
+    if (micRequestInFlightRef.current) return;
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setMicStatus('error');
+      setMicError('Microphone access is unavailable in this browser. You can still type your answers.');
+      setIsMicOn(false);
+      return;
+    }
+
+    micRequestInFlightRef.current = true;
+    setMicStatus('requesting');
+    setMicError(null);
+    stopStream(micStreamRef.current);
+    micStreamRef.current = null;
+
+    try {
+      const audioConstraints: MediaTrackConstraints | boolean = deviceId
+        ? { deviceId: { exact: deviceId } }
+        : true;
+      const audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: false,
+      });
+      const audioTracks = audioStream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        stopStream(audioStream);
+        throw Object.assign(new Error('No audio track'), { name: 'NotFoundError' });
+      }
+
+      micStreamRef.current = audioStream;
+      audioTracks.forEach((t) => (t.enabled = true));
+
+      if (voiceServiceRef.current && (await voiceServiceRef.current.initMicAnalyser(audioStream))) {
         const updateFreq = () => {
           if (voiceServiceRef.current) {
             const data = voiceServiceRef.current.getAudioFrequencyData();
@@ -288,21 +359,51 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         };
         updateFreq();
       }
-      setIsMicOn(true);
-    } catch {
-      setIsMicOn(false);
-    }
 
-    // Camera stream (deferred to enableCamera so it can be retried/toggled)
-    await enableCamera();
+      setIsMicOn(true);
+      setMicStatus('live');
+
+      // Watch for the OS/browser revoking the device mid-session.
+      audioTracks[0]?.addEventListener?.('ended', () => {
+        if (!isMountedRef.current) return;
+        setMicStatus('off');
+        setIsMicOn(false);
+        setMicError('The microphone stopped. Reconnect it and enable the mic again.');
+      });
+    } catch (err: any) {
+      stopStream(micStreamRef.current);
+      micStreamRef.current = null;
+      setIsMicOn(false);
+      setMicStatus('error');
+      setMicError(humanizeMicError(err));
+    } finally {
+      micRequestInFlightRef.current = false;
+    }
+  };
+
+  const disableMic = () => {
+    if (voiceServiceRef.current) voiceServiceRef.current.stopListening();
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    stopStream(micStreamRef.current);
+    micStreamRef.current = null;
+    setFrequencyData(null);
+    setIsMicOn(false);
+    setMicStatus('off');
+    setMicError(null);
+    if (voiceState === 'listening') setVoiceState('idle');
   };
 
   /**
-   * Acquire (or re-acquire) the camera stream. The stream is stored in React
-   * state and attached to the <video> element by an effect, so mounting order
-   * and ordinary re-renders can never leave the preview black.
+   * Acquire the camera. A resolved getUserMedia call is NOT treated as success:
+   * the video track is validated and the camera is only marked "live" once the
+   * <video> element genuinely renders frames (see attachCameraStream below).
    */
   const enableCamera = async (deviceId?: string) => {
+    if (cameraRequestInFlightRef.current) return;
+
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setCameraStatus('error');
       setCameraError(
@@ -312,6 +413,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
       return;
     }
 
+    cameraRequestInFlightRef.current = true;
     setCameraStatus('requesting');
     setCameraError(null);
     // Release any previous stream first to avoid "device in use" errors.
@@ -328,17 +430,26 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         audio: false,
       });
 
+      const videoTracks = stream.getVideoTracks();
+      if (videoTracks.length === 0) {
+        stopStream(stream);
+        throw Object.assign(new Error('No video track'), { name: 'NotFoundError' });
+      }
+
+      streamingTrackRef.current = videoTracks[0];
       videoStreamRef.current = stream;
       setCameraStream(stream);
-      setIsCameraOn(true);
-      setCameraStatus('live');
+      // Status stays "requesting" until the <video> element reports real frames.
     } catch (err: any) {
       stopStream(videoStreamRef.current);
       videoStreamRef.current = null;
+      streamingTrackRef.current = null;
       setCameraStream(null);
       setIsCameraOn(false);
       setCameraStatus('error');
       setCameraError(humanizeCameraError(err));
+    } finally {
+      cameraRequestInFlightRef.current = false;
     }
   };
 
@@ -346,38 +457,91 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     if (visionServiceRef.current) visionServiceRef.current.stopAnalysis();
     stopStream(videoStreamRef.current);
     videoStreamRef.current = null;
+    streamingTrackRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    if (previewVideoRef.current) previewVideoRef.current.srcObject = null;
     setCameraStream(null);
     setIsCameraOn(false);
     setCameraStatus('off');
     setCameraError(null);
+    setVisualState(null);
   };
 
   const handleToggleCamera = () => {
-    if (isCameraOn && cameraStatus === 'live') {
+    if (cameraStatus === 'live') {
       disableCamera();
     } else {
       enableCamera();
     }
   };
 
-  // Attach the active MediaStream to the <video> element whenever the stream
-  // changes OR the element (re)mounts (e.g. when the session view appears).
-  // This is the fix for the black preview: the old code tried to set srcObject
-  // before the video element existed, so the stream was never rendered.
+  /**
+   * Attach a MediaStream to a <video> element and resolve readiness from real
+   * playback signals (loadeddata/playing) rather than from the permission call.
+   * Returns a cleanup function that removes listeners and detaches the stream.
+   */
+  const attachCameraStream = (el: HTMLVideoElement, stream: MediaStream): (() => void) => {
+    el.srcObject = stream;
+    el.muted = true;
+    el.playsInline = true;
+
+    let settled = false;
+    const markLive = () => {
+      if (settled) return;
+      if (el.videoWidth > 0 && el.readyState >= 2 && streamingTrackRef.current?.readyState === 'live') {
+        settled = true;
+        setCameraStatus('live');
+        setIsCameraOn(true);
+        setCameraError(null);
+      }
+    };
+    const onReady = () => markLive();
+    const onError = () => {
+      if (settled) return;
+      settled = true;
+      setCameraStatus('error');
+      setCameraError(
+        'The camera stream started but no video is being displayed. Try another camera, or close other apps that may be using it.'
+      );
+    };
+
+    el.addEventListener('loadeddata', onReady);
+    el.addEventListener('playing', onReady);
+    el.addEventListener('error', onError);
+
+    const playResult = el.play?.();
+    if (playResult && typeof playResult.catch === 'function') {
+      // Autoplay can be blocked until a user gesture; keep the stream attached
+      // and let the readiness timeout / next interaction resolve it.
+      playResult.catch(() => {});
+    }
+
+    const timeout = window.setTimeout(() => {
+      if (!settled && el.videoWidth === 0) {
+        onError();
+      } else {
+        markLive();
+      }
+    }, 6000);
+
+    return () => {
+      window.clearTimeout(timeout);
+      el.removeEventListener('loadeddata', onReady);
+      el.removeEventListener('playing', onReady);
+      el.removeEventListener('error', onError);
+      if (el.srcObject === stream) el.srcObject = null;
+    };
+  };
+
+  // Attach the active MediaStream to whichever <video> is currently mounted:
+  // the pre-session device-check preview before the session starts, and the main
+  // stage video during the interview. Re-runs when the stream changes or the
+  // element (re)mounts, so ordinary re-renders can never leave the preview black.
   useEffect(() => {
-    const video = videoRef.current;
+    const video = videoRef.current || previewVideoRef.current;
     if (!video || !cameraStream) return;
 
-    if (video.srcObject !== cameraStream) {
-      video.srcObject = cameraStream;
-    }
-    const playPromise = video.play?.();
-    if (playPromise && typeof playPromise.catch === 'function') {
-      playPromise.catch(() => {
-        /* Autoplay can be blocked until a user gesture; the element stays paused but attached. */
-      });
-    }
+    const detach = attachCameraStream(video, cameraStream);
 
     // Bind the (privacy-preserving, local-only) framing analysis once video is ready.
     if (visionServiceRef.current) {
@@ -387,29 +551,17 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
     const [track] = cameraStream.getVideoTracks();
     const handleTrackEnded = () => {
+      if (!isMountedRef.current) return;
       setCameraStatus('off');
       setIsCameraOn(false);
+      setVisualState(null);
+      setCameraError('The camera stopped. Reconnect it and enable the camera again.');
     };
     track?.addEventListener?.('ended', handleTrackEnded);
 
     return () => {
+      detach();
       track?.removeEventListener?.('ended', handleTrackEnded);
-    };
-  }, [cameraStream, hasStartedSession]);
-
-  // Mirror the same camera stream into the pre-session device-check preview.
-  // A MediaStream may be attached to more than one <video> element.
-  useEffect(() => {
-    const el = previewVideoRef.current;
-    if (!el) return;
-    el.srcObject = cameraStream;
-    if (cameraStream) {
-      el.play().catch(() => {
-        /* autoplay may be blocked; silent */
-      });
-    }
-    return () => {
-      if (el) el.srcObject = null;
     };
   }, [cameraStream, hasStartedSession]);
 
@@ -474,29 +626,42 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     }
   };
 
-  // Toggle Microphone State & sync with STT VoiceService
+  // Toggle Microphone State & sync with STT VoiceService. Releasing or
+  // re-acquiring the track is done through enableMic/disableMic so we never
+  // assume a mic exists just because permission was requested.
   const handleToggleMic = () => {
-    const nextMicState = !isMicOn;
-    setIsMicOn(nextMicState);
+    if (isMicOn) {
+      // Mute immediately but keep the stream alive for a quick re-enable.
+      if (voiceServiceRef.current) voiceServiceRef.current.stopListening();
+      if (micStreamRef.current) {
+        micStreamRef.current.getAudioTracks().forEach((track) => {
+          track.enabled = false;
+        });
+      }
+      setIsMicOn(false);
+      setMicStatus('off');
+      if (voiceState === 'listening') setVoiceState('idle');
+      return;
+    }
 
-    // Mute / Unmute media stream tracks
     if (micStreamRef.current) {
       micStreamRef.current.getAudioTracks().forEach((track) => {
-        track.enabled = nextMicState;
+        track.enabled = true;
       });
+      setIsMicOn(true);
+      setMicStatus('live');
+      setVoiceState('listening');
+      if (voiceServiceRef.current) voiceServiceRef.current.startListening(transcript);
+      return;
     }
 
-    if (voiceServiceRef.current) {
-      if (nextMicState) {
+    // No stream (permission previously denied or device missing) — retry acquisition.
+    void enableMic().then(() => {
+      if (micStreamRef.current && voiceServiceRef.current) {
         setVoiceState('listening');
         voiceServiceRef.current.startListening(transcript);
-      } else {
-        voiceServiceRef.current.stopListening();
-        if (voiceState === 'listening') {
-          setVoiceState('idle');
-        }
       }
-    }
+    });
   };
 
   // Toggle AI interviewer voice output (speaker control)
@@ -524,6 +689,10 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   // Repeat AI voice dialogue with current persona
   const handleRepeatQuestion = () => {
     if (!currentQuestion || !voiceServiceRef.current) return;
+    // Never re-trigger playback while the AI is speaking or an answer is in flight.
+    if (voiceState === 'ai_speaking' || voiceState === 'evaluating' || voiceState === 'processing') {
+      return;
+    }
     voiceServiceRef.current.stopListening();
     setVoiceState('ai_speaking');
 
@@ -562,6 +731,9 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   // 4. SUBMIT CANDIDATE ANSWER
   const handleSubmitAnswer = async () => {
     if (!currentQuestion) return;
+    // Hard guard against double-submission (double click / Enter + click / timers).
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
 
     // Stop speech recognition
     let finalTranscript = transcript.trim();
@@ -574,6 +746,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
     if (!finalTranscript) {
       setErrorMessage('Please speak or type your answer before submitting.');
+      isSubmittingRef.current = false;
       return;
     }
 
@@ -581,6 +754,8 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     setErrorMessage(null);
 
     const timeSpentSeconds = Math.max(5, Math.round((Date.now() - questionStartTime) / 1000));
+    const sttAvailable = voiceServiceRef.current?.isSpeechRecognitionAvailable() ?? false;
+    const inputMethod: 'voice' | 'text_fallback' = isMicOn && sttAvailable ? 'voice' : 'text_fallback';
 
     try {
       const result = await api.submitAnswer(interviewId, {
@@ -588,7 +763,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         transcript: finalTranscript,
         audioDurationSeconds: timeSpentSeconds,
         timeSpentSeconds,
-        inputMethod: isMicOn ? 'voice' : 'text_fallback',
+        inputMethod,
       });
 
       setRemainingQuestionsCount(result.remainingQuestions);
@@ -607,6 +782,8 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to evaluate answer. Please try again.');
       setVoiceState('listening');
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 
@@ -634,6 +811,9 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
   // 5. FINISH INTERVIEW & COMPLETE REPORT
   const handleFinishInterview = async () => {
+    // Prevent duplicate reports if finish is triggered twice (timer + button).
+    if (isFinishingRef.current) return;
+    isFinishingRef.current = true;
     setVoiceState('processing');
     try {
       // 1. Gather & save visual engagement metrics
@@ -648,6 +828,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to finish interview');
       setVoiceState('idle');
+      isFinishingRef.current = false;
     }
   };
 
@@ -853,13 +1034,31 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${isMicOn ? 'bg-emerald-400' : 'bg-red-400'}`} />
-                    <span className="text-zinc-300">Microphone: {isMicOn ? 'Ready' : 'Unavailable'}</span>
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        micStatus === 'live'
+                          ? 'bg-emerald-400'
+                          : micStatus === 'requesting'
+                          ? 'bg-amber-400'
+                          : 'bg-red-400'
+                      }`}
+                    />
+                    <span className="text-zinc-300">
+                      Microphone:{' '}
+                      {micStatus === 'live'
+                        ? 'Ready'
+                        : micStatus === 'requesting'
+                        ? 'Starting…'
+                        : micStatus === 'error'
+                        ? 'Unavailable'
+                        : 'Muted'}
+                    </span>
                   </div>
                   {cameraError && <p className="text-amber-300/90 leading-snug">{cameraError}</p>}
-                  {!isMicOn && (
+                  {micError && <p className="text-amber-300/90 leading-snug">{micError}</p>}
+                  {!isMicOn && !micError && (
                     <p className="text-amber-300/90 leading-snug">
-                      No microphone detected. You can still type your answers on-screen.
+                      Microphone is off. You can still type your answers on-screen.
                     </p>
                   )}
                   <div className="flex flex-wrap gap-2 pt-1">
@@ -957,16 +1156,34 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
             {/* Core Spoken Question Prompt */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 ${
                   currentQuestion?.parentQuestionId ? 'text-indigo-400' : 'text-emerald-400'
                 }`}>
                   <Sparkles className="w-3.5 h-3.5" />
                   {currentQuestion?.parentQuestionId ? 'Adaptive Follow-up Probe' : 'Technical Assessment Prompt'}
                 </span>
+                {currentQuestion?.aiSource === 'fallback' && (
+                  <span
+                    title="The AI model was unavailable, so this question came from the built-in question bank."
+                    className="text-[10px] font-semibold text-amber-300/90 bg-amber-950/40 border border-amber-800/60 rounded-lg px-2 py-0.5 whitespace-nowrap"
+                  >
+                    Offline question
+                  </span>
+                )}
                 <button
                   onClick={handleRepeatQuestion}
-                  className="text-xs font-semibold text-zinc-400 hover:text-blue-400 flex items-center gap-1 transition"
+                  disabled={
+                    voiceState === 'ai_speaking' ||
+                    voiceState === 'evaluating' ||
+                    voiceState === 'processing'
+                  }
+                  title={
+                    voiceState === 'ai_speaking'
+                      ? 'The interviewer is already speaking'
+                      : 'Repeat the current question aloud'
+                  }
+                  className="text-xs font-semibold text-zinc-400 hover:text-blue-400 flex items-center gap-1 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-zinc-400"
                 >
                   <Volume2 className="w-3.5 h-3.5" />
                   Re-listen Voice
@@ -1095,6 +1312,13 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
                 {isEditingTranscript ? 'Done Editing' : 'Edit Text'}
               </button>
             </div>
+
+            {!sttAvailable && (
+              <p className="text-[11px] text-amber-300/90 leading-snug">
+                Live speech-to-text isn't supported in this browser, so voice is not being
+                transcribed. You can still speak and type your answer here.
+              </p>
+            )}
 
             {/* Transcript Textarea */}
             <textarea
@@ -1262,6 +1486,11 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
             {/* AI Feedback Summary */}
             <div className="p-4 bg-[#18181c] rounded-2xl border border-[#27272a] text-xs text-zinc-300 leading-relaxed space-y-2">
+              {lastEvaluation.aiSource === 'fallback' && (
+                <p className="text-[10px] uppercase tracking-wide font-semibold text-amber-300/90">
+                  Scored by the offline (non-AI) evaluator — the AI model was unavailable.
+                </p>
+              )}
               <p>
                 <strong className="text-white">Interviewer Feedback: </strong>
                 {lastEvaluation.feedback}

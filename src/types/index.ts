@@ -72,6 +72,7 @@ export interface Question {
   hints?: string;
   audioUrl?: string;
   createdAt?: string;
+  aiSource?: 'gemini' | 'fallback';
 }
 
 export interface Answer {
@@ -103,6 +104,7 @@ export interface Evaluation {
   feedback: string;
   suggestedAnswer: string;
   createdAt?: string;
+  aiSource?: 'gemini' | 'fallback';
 }
 
 export interface VisualEngagementMetrics {
@@ -144,6 +146,7 @@ export interface AssessmentReport {
   executiveSummary: string;
   suggestedRoles?: string[];
   createdAt: string;
+  aiSource?: 'gemini' | 'fallback';
 }
 
 export interface InterviewTemplate {

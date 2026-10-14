@@ -297,6 +297,17 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
         </div>
       </div>
 
+      {report.aiSource === 'fallback' && (
+        <div className="flex items-start gap-2 p-3 rounded-2xl bg-amber-950/30 border border-amber-800/60 text-[11px] text-amber-200/90">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+          <span>
+            This report was synthesized by the offline (non-AI) scoring engine because the AI
+            model was unavailable during this session. Scores reflect deterministic scoring of the
+            recorded answers, not a live AI model.
+          </span>
+        </div>
+      )}
+
       {/* 3. RADAR MATRIX & EXECUTIVE SUMMARY */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Radar Matrix (5 cols) */}

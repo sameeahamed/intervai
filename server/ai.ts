@@ -241,6 +241,7 @@ CRITICAL INSTRUCTIONS FOR REALISTIC HUMAN INTERVIEWER STYLE:
           difficultyLevel: parsed.difficultyLevel || targetDifficulty,
           expectedPoints: parsed.expectedPoints || [],
           hints: parsed.hints || 'Think about practical production experience, edge-cases, and trade-offs.',
+          aiSource: 'gemini',
         };
       }
     } catch (err: any) {
@@ -347,6 +348,7 @@ Suggested Ideal Answer: A concise, model exemplar answer demonstrating top-tier 
           weaknesses: Array.isArray(parsed.weaknesses) ? parsed.weaknesses : ['Could expand on edge cases and failure modes'],
           feedback: parsed.feedback || 'No detailed feedback was returned.',
           suggestedAnswer: parsed.suggestedAnswer || 'A strong answer articulates mechanisms, trade-offs, and failure recovery.',
+          aiSource: 'gemini',
         };
       }
     } catch (err: any) {
@@ -458,6 +460,7 @@ Generate:
           recommendations: parsed.recommendations || ['Continue honing hands-on system architecture practice'],
           executiveSummary: parsed.executiveSummary || `The candidate demonstrated strong capability in ${interview.jobRole} with an overall score of ${avgOverall}/100.`,
           suggestedRoles: parsed.suggestedRoles || [interview.jobRole],
+          aiSource: 'gemini',
         };
       }
     } catch (err: any) {
@@ -488,8 +491,9 @@ Generate:
       'Practice rapid structured verbal synthesis using the STAR method for behavioral prompts',
       'Incorporate deep-dive architectural trade-offs in system design responses'
     ],
-    executiveSummary: `The candidate successfully concluded a comprehensive ${interview.totalQuestions}-question AI voice assessment for ${interview.jobRole} (${interview.experienceLevel}). Achieved a composite score of ${avgOverall}/100, showing strong foundational and communication competency.`,
-    suggestedRoles: [interview.jobRole, `Senior ${interview.jobRole}`, 'Technical Consultant']
+    executiveSummary: `The candidate completed a ${interview.totalQuestions}-question ${interview.jobRole} (${interview.experienceLevel}) interview session. Composite score: ${avgOverall}/100. Note: this summary was produced by the deterministic (non-AI) scoring synthesizer because the AI model was unavailable.`,
+    suggestedRoles: [interview.jobRole, `Senior ${interview.jobRole}`, 'Technical Consultant'],
+    aiSource: 'fallback',
   };
 }
 
@@ -538,6 +542,7 @@ function generateFallbackQuestion(interview: Interview, orderIndex: number, diff
       difficultyLevel: difficulty || 'medium',
       expectedPoints: ['Specific concrete example', 'Explicit trade-offs', 'Failure modes / edge cases', 'Measurable outcome or metric'],
       hints: 'Go deeper than your first answer: a concrete example with real trade-offs and results.',
+      aiSource: 'fallback',
     };
   }
 
@@ -589,7 +594,8 @@ function generateFallbackQuestion(interview: Interview, orderIndex: number, diff
       category: item.category,
       difficultyLevel: difficulty || item.diff,
       expectedPoints: item.points,
-      hints: 'Focus on real-world engineering trade-offs and performance.'
+      hints: 'Focus on real-world engineering trade-offs and performance.',
+      aiSource: 'fallback',
     };
   }
 
@@ -623,7 +629,8 @@ function generateFallbackQuestion(interview: Interview, orderIndex: number, diff
       category: item.category,
       difficultyLevel: difficulty || item.diff,
       expectedPoints: item.points,
-      hints: 'Highlight scalability, data consistency, and failure modes.'
+      hints: 'Highlight scalability, data consistency, and failure modes.',
+      aiSource: 'fallback',
     };
   }
 
@@ -664,7 +671,8 @@ function generateFallbackQuestion(interview: Interview, orderIndex: number, diff
     category: selected.category,
     difficultyLevel: difficulty || selected.diff,
     expectedPoints: selected.points,
-    hints: 'Structure your thoughts clearly: context, solution, trade-offs, and metrics.'
+    hints: 'Structure your thoughts clearly: context, solution, trade-offs, and metrics.',
+    aiSource: 'fallback',
   };
 }
 
@@ -732,6 +740,7 @@ function generateFallbackEvaluation(question: Question, transcript: string, role
       feedback:
         'This response does not contain enough substantive, on-topic content to evaluate. Please answer the question directly with at least a few complete sentences.',
       suggestedAnswer: `A strong answer to "${(question.questionText || '').slice(0, 120)}" states the core approach, explains key trade-offs, and gives a concrete example.`,
+      aiSource: 'fallback',
     };
   }
 
@@ -777,5 +786,6 @@ function generateFallbackEvaluation(question: Question, transcript: string, role
         ? `Your answer touched on ${question.category} but did not fully address what was asked. Focus on the specific question and cover the key points directly.`
         : `You addressed the question on ${question.category} with a ${wordCount >= 60 ? 'detailed' : 'brief'} response. Add concrete examples and trade-offs to strengthen it.`,
     suggestedAnswer: 'A strong answer states the core mechanism, explains the key trade-offs, and supports it with a concrete, measurable example.',
+    aiSource: 'fallback',
   };
 }

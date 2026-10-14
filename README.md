@@ -58,6 +58,9 @@ Names only — set values in `.env`, never in source.
 | `AUTH_SECRET` | HMAC secret for signing sessions/tokens. **Required in production** and must be at least 32 characters; the server refuses to start otherwise. In development an ephemeral secret is generated automatically (tokens become invalid after a restart). |
 | `GEMINI_API_KEY` | Enables Google GenAI question generation, evaluation, and synthesis. |
 | `AI_API_KEY` | Alias for an external AI proxy; either key enables AI. |
+| `GEMINI_MODEL` | Primary Gemini model id. Defaults to `gemini-2.5-flash`. |
+| `GEMINI_MODEL_FALLBACKS` | Comma-separated extra model ids tried in order if the primary fails. |
+| `GEMINI_TTS_MODEL` | Gemini text-to-speech model id. Defaults to `gemini-2.5-flash-preview-tts`. |
 | `APP_URL` | Public base URL used when composing links. |
 | `VOICE_PROVIDER` | Voice mode selector (e.g. `browser`, `gemini-tts`, `web-speech`). Defaults to browser Web Speech. |
 | `TTS_API_KEY` / `STT_API_KEY` | Optional external text-to-speech / speech-to-text keys. |
@@ -89,7 +92,10 @@ unmigrated legacy record is upgraded to scrypt on the next successful login.
 When no AI key is configured, the server still produces a complete experience from local,
 deterministic logic: adaptive question generation, answer evaluation (scores and feedback),
 and the final assessment report are all synthesized on the server. No paid AI or voice
-service is contacted.
+service is contacted. Every generated question, evaluation, and report carries an
+`aiSource` field (`gemini` or `fallback`) and the UI labels fallback content, so the app
+never presents offline output as if an AI model produced it. The offline evaluator does not
+praise empty, single-word, gibberish, or off-topic answers; those are scored low.
 
 ### Data & persistence
 - **With `MONGODB_URI`:** users, templates, interviews, questions, answers, evaluations,

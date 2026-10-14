@@ -7,6 +7,7 @@ import { api } from '../../services/api.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { VoiceService } from '../../services/voice.ts';
 import { extractSkillsFromText } from '../../utils/personalization.ts';
+import { VisionService, VisualAnalysisState } from '../../services/vision.ts';
 import {
   Mic,
   Camera,
@@ -54,6 +55,10 @@ const SKILL_SUGGESTIONS: Record<string, string[]> = {
   'Cloud / DevOps Engineer': ['AWS / GCP', 'Kubernetes', 'CI/CD Pipelines', 'Terraform', 'Docker', 'Monitoring'],
   'Cybersecurity Analyst': ['Threat Modeling', 'OWASP Top 10', 'Network Security', 'Cryptography', 'Incident Response'],
   'UI/UX Designer': ['Figma', 'User Research', 'Design Systems', 'Usability Testing', 'Wireframing & Prototyping'],
+  'Mobile Developer (iOS/Android)': ['Swift / Kotlin', 'React Native', 'Mobile UI Patterns', 'Offline Storage', 'API Integration'],
+  'Product Manager': ['Product Discovery', 'Roadmapping', 'Prioritization', 'Product Analytics', 'Experiment Design'],
+  'Human Resources (HR) Specialist': ['Talent Acquisition', 'Structured Interviewing', 'Employee Relations', 'People Analytics', 'Workforce Planning'],
+  'Marketing & Growth Strategist': ['Growth Experiments', 'Funnel Analytics', 'Content Strategy', 'SEO / Paid Media', 'Customer Segmentation'],
 };
 
 // Flat, de-duplicated vocabulary used for optional job-description skill prefill.
@@ -81,12 +86,14 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
   const [totalQuestions, setTotalQuestions] = useState<number>(5);
   const [durationMinutes, setDurationMinutes] = useState<number>(20);
   const [isPractice, setIsPractice] = useState<boolean>(false);
-  const [consentAccepted, setConsentAccepted] = useState<boolean>(true);
+  const [consentAccepted, setConsentAccepted] = useState<boolean>(false);
 
   // Hardware Checks
   const [micActive, setMicActive] = useState<boolean>(false);
   const [micVolume, setMicVolume] = useState<number>(0);
   const [cameraActive, setCameraActive] = useState<boolean>(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [visualState, setVisualState] = useState<VisualAnalysisState | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
 
@@ -94,16 +101,19 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
   const [serverError, setServerError] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const visionServiceRef = useRef<VisionService | null>(null);
   const voiceServiceRef = useRef<VoiceService | null>(null);
   const animFrameRef = useRef<number | null>(null);
+  const hardwareCheckRunRef = useRef<number>(0);
 
   // Update skills when role changes
   const handleRoleChange = (role: string) => {
     setJobRole(role);
-    if (SKILL_SUGGESTIONS[role]) {
-      setSkills(SKILL_SUGGESTIONS[role]);
-    }
+    // Replace role defaults as a unit so skills from the previous role never
+    // silently leak into the interview focus. Custom roles start with no tags.
+    setSkills(SKILL_SUGGESTIONS[role] || []);
   };
 
   const handleAddSkill = () => {
@@ -134,14 +144,21 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
 
   // Hardware test triggers
   const startHardwareCheck = async () => {
+    const runId = ++hardwareCheckRunRef.current;
     setMicError(null);
     setCameraError(null);
 
     // 1. Microphone test
     try {
       const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (runId !== hardwareCheckRunRef.current) {
+        audioStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      micStreamRef.current = audioStream;
       voiceServiceRef.current = new VoiceService();
       await voiceServiceRef.current.initMicAnalyser(audioStream);
+      if (runId !== hardwareCheckRunRef.current) return;
       setMicActive(true);
 
       const checkVolume = () => {
@@ -153,45 +170,89 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
       };
       checkVolume();
     } catch (err: any) {
-      setMicError('Microphone access denied or unavailable. You can still use Text Fallback mode.');
-      setMicActive(false);
+      if (runId === hardwareCheckRunRef.current) {
+        setMicError('Microphone access denied or unavailable. You can still use Text Fallback mode.');
+        setMicActive(false);
+      }
     }
 
     // 2. Camera test
     try {
       const videoStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
-      mediaStreamRef.current = videoStream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = videoStream;
-        videoRef.current.play();
+      if (runId !== hardwareCheckRunRef.current) {
+        videoStream.getTracks().forEach((track) => track.stop());
+        return;
       }
+      mediaStreamRef.current = videoStream;
+      setCameraStream(videoStream);
       setCameraActive(true);
     } catch (err: any) {
-      setCameraError('Camera access denied or unavailable (optional for practice feedback).');
-      setCameraActive(false);
+      if (runId === hardwareCheckRunRef.current) {
+        setCameraError('Camera access denied or unavailable (optional for practice feedback).');
+        setCameraActive(false);
+      }
     }
   };
 
   const stopHardwareCheck = () => {
+    hardwareCheckRunRef.current += 1;
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((track) => track.stop());
+      micStreamRef.current = null;
     }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    if (videoRef.current) videoRef.current.srcObject = null;
+    if (visionServiceRef.current) {
+      visionServiceRef.current.dispose();
+      visionServiceRef.current = null;
     }
     if (voiceServiceRef.current) {
       voiceServiceRef.current.cleanup();
+      voiceServiceRef.current = null;
     }
   };
 
   useEffect(() => {
-    if (step === 3) {
-      startHardwareCheck();
+    if (step === 2 && consentAccepted) {
+      void startHardwareCheck();
     } else {
       stopHardwareCheck();
+      if (step === 2) {
+        setMicActive(false);
+        setCameraActive(false);
+        setCameraStream(null);
+        setMicVolume(0);
+        setVisualState(null);
+      }
     }
     return () => stopHardwareCheck();
-  }, [step]);
+  }, [step, consentAccepted]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (step !== 2 || !consentAccepted || !cameraActive || !cameraStream || !video) return;
+
+    video.srcObject = cameraStream;
+    void video.play().catch(() => {});
+
+    const vision = new VisionService();
+    vision.bindVideo(video, setVisualState);
+    visionServiceRef.current = vision;
+    vision.startAnalysis(800);
+
+    return () => {
+      vision.dispose();
+      if (visionServiceRef.current === vision) visionServiceRef.current = null;
+      if (video.srcObject === cameraStream) video.srcObject = null;
+    };
+  }, [step, consentAccepted, cameraActive, cameraStream]);
 
   const handleLaunchInterview = async () => {
     if (!consentAccepted) {
@@ -226,7 +287,7 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in text-[#e5e7eb]">
+    <div className="interview-setup max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in text-[#e5e7eb]">
       {/* Wizard Card Container */}
       <div className="bg-[#121215] border border-[#27272a] rounded-3xl shadow-xl p-6 sm:p-10 space-y-8">
         {/* Step Indicator Header */}
@@ -234,12 +295,11 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 text-xs font-bold bg-blue-950/80 text-blue-300 border border-blue-800/60 rounded-full">
-                Step {step} of 3
+                Step {step} of 2
               </span>
               <h2 className="text-xl sm:text-2xl font-black text-white">
-                {step === 1 && 'Role & Experience Level'}
-                {step === 2 && 'Assessment Format & Skills'}
-                {step === 3 && 'Device Verification & Consent'}
+                {step === 1 && 'Interview Setup'}
+                {step === 2 && 'Device Check & Consent'}
               </h2>
             </div>
             <p className="text-xs text-zinc-400 mt-1">
@@ -262,7 +322,7 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
           </div>
         )}
 
-        {/* STEP 1: ROLE & EXPERIENCE */}
+        {/* STEP 1: ROLE, EXPERIENCE, AND ASSESSMENT SETTINGS */}
         {step === 1 && (
           <div className="space-y-6">
             {/* Role Select */}
@@ -330,21 +390,15 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
               </div>
             </div>
 
-            <div className="flex justify-end pt-4">
-              <button
-                type="button"
-                onClick={() => setStep(2)}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-2"
-              >
-                <span>Continue to Assessment Format</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
           </div>
         )}
 
-        {/* STEP 2: FORMAT, DIFFICULTY & SKILLS */}
-        {step === 2 && (
+        {step === 1 && (
+          <div className="interview-setup-divider"><span>Assessment details</span></div>
+        )}
+
+        {/* Remaining setup fields share step 1 to reduce the pre-interview flow. */}
+        {step === 1 && (
           <div className="space-y-6">
             {/* Practice / Ungraded Mode Toggle */}
             <div
@@ -590,29 +644,28 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-4">
+            <div className="flex justify-end pt-4">
               <button
                 type="button"
-                onClick={() => setStep(1)}
-                className="px-5 py-2.5 text-zinc-300 hover:bg-[#18181c] text-xs font-semibold rounded-xl transition flex items-center gap-1.5"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={() => setStep(3)}
+                onClick={() => {
+                  if (jobRole === 'Custom Role' && !customRole.trim()) {
+                    setServerError('Enter your custom job role to continue.');
+                    return;
+                  }
+                  setServerError(null);
+                  setStep(2);
+                }}
                 className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-2"
               >
-                <span>Proceed to Device Verification</span>
+                <span>Review and start interview</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 3: DEVICE VERIFICATION & ETHICAL CONSENT */}
-        {step === 3 && (
+        {/* STEP 2: DEVICE VERIFICATION & ETHICAL CONSENT */}
+        {step === 2 && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Mic Test Card */}
@@ -629,12 +682,14 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
                         : 'bg-amber-950/80 text-amber-300 border border-amber-800/60'
                     }`}
                   >
-                    {micActive ? 'Mic Connected' : 'Text Fallback Ready'}
+                    {micActive ? 'Mic Connected' : consentAccepted ? 'Text Fallback Ready' : 'Awaiting consent'}
                   </span>
                 </div>
 
                 <p className="text-xs text-zinc-400">
-                  Speak into your microphone. Watch the live volume level bar respond to your voice.
+                  {consentAccepted
+                    ? 'Speak into your microphone. Watch the live volume level bar respond to your voice.'
+                    : 'Accept the privacy consent below to check your microphone. Text fallback is available if the mic is unavailable.'}
                 </p>
 
                 {/* Volume meter bar */}
@@ -675,17 +730,45 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
                 </div>
 
                 <div className="relative w-full h-32 bg-[#0a0a0b] rounded-xl overflow-hidden flex items-center justify-center border border-[#27272a]">
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover -scale-x-100"
-                  />
+                  {cameraActive && (
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover -scale-x-100"
+                    />
+                  )}
                   {!cameraActive && (
                     <span className="text-xs text-zinc-500">Camera preview not active (optional)</span>
                   )}
                 </div>
+
+              {cameraActive && visualState && (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className={`text-[11px] leading-relaxed ${
+                    visualState.faceDetectionStatus === 'error' || visualState.faceCount === 0 || (visualState.faceCount ?? 0) > 1
+                      ? 'text-red-500 dark:text-red-300'
+                      : visualState.faceDetectionStatus === 'ready' && visualState.isCentered
+                      ? 'text-emerald-700 dark:text-emerald-300'
+                      : 'text-amber-700 dark:text-amber-300'
+                  }`}
+                >
+                  {visualState.faceDetectionStatus === 'error'
+                    ? visualState.faceDetectionError || 'Face detection is unavailable. You can continue without it.'
+                    : visualState.faceDetectionStatus !== 'ready'
+                    ? 'Loading local face check… Video frames stay on this device.'
+                    : visualState.faceCount === 0
+                    ? 'No face detected. Move into view and face the camera.'
+                    : (visualState.faceCount ?? 0) > 1
+                    ? 'More than one face detected. Please make sure only you are in frame.'
+                    : visualState.isCentered
+                    ? 'One face detected and centered. Face count is checked locally and is not saved.'
+                    : 'One face detected. Center yourself in the camera guide.'}
+                </p>
+              )}
 
                 {cameraError && (
                   <p className="text-[11px] text-zinc-400">{cameraError}</p>
@@ -713,7 +796,7 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
                   className="w-4 h-4 mt-0.5 text-blue-600 rounded border-zinc-700 bg-zinc-900 focus:ring-blue-500"
                 />
                 <span className="text-xs text-zinc-300 leading-relaxed">
-                  I acknowledge that my spoken responses will be evaluated by AI models for structured interview feedback. I understand camera signals are computed locally inside my browser for basic practice metrics with zero facial recognition or psychological profiling.{' '}
+                  I acknowledge that my spoken responses will be evaluated by AI models for structured interview feedback. If I enable the camera, face count and framing are checked locally; images and face counts are not uploaded or stored. No face identification or psychological profiling is performed. Aggregate camera metrics may appear in my report.{' '}
                   <button
                     type="button"
                     onClick={onOpenPrivacy}
@@ -729,7 +812,7 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
             <div className="flex items-center justify-between pt-4">
               <button
                 type="button"
-                onClick={() => setStep(2)}
+                onClick={() => setStep(1)}
                 className="px-5 py-2.5 text-zinc-300 hover:bg-[#18181c] text-xs font-semibold rounded-xl transition flex items-center gap-1.5"
               >
                 <ArrowLeft className="w-4 h-4" />

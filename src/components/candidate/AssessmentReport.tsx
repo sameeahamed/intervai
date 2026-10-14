@@ -269,13 +269,13 @@ export const AssessmentReport: React.FC<AssessmentReportProps> = ({
             {interview.candidateName} • {interview.jobRole}
           </h1>
           <p className="text-xs text-zinc-400">
-            {interview.experienceLevel.toUpperCase()} Level • {interview.interviewType.toUpperCase()} Format • Completed on {new Date().toLocaleDateString()}
+            {interview.experienceLevel.toUpperCase()} Level • {interview.interviewType.toUpperCase()} Format • Completed on {new Date(interview.completedAt || interview.createdAt).toLocaleDateString()}
           </p>
         </div>
 
         <div className="flex items-center gap-5 bg-[#18181c] p-4 rounded-2xl border border-[#27272a]">
           <div className="text-center">
-            <div className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
+            <div className="report-overall-score text-4xl sm:text-5xl font-black">
               {report.overallScore}
             </div>
             <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold mt-0.5">

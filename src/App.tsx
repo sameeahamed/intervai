@@ -10,13 +10,13 @@ import { PrivacyConsentModal } from './components/common/PrivacyConsentModal.tsx
 import { DatabaseStatusModal } from './components/common/DatabaseStatusModal.tsx';
 import { AuthModal } from './components/auth/AuthModal.tsx';
 import { LandingPage } from './components/candidate/LandingPage.tsx';
-import { CandidateDashboard } from './components/candidate/CandidateDashboard.tsx';
-import { InterviewSetup } from './components/candidate/InterviewSetup.tsx';
-import { InterviewRoom } from './components/candidate/InterviewRoom.tsx';
-import { AssessmentReport } from './components/candidate/AssessmentReport.tsx';
-import { InterviewHistory } from './components/candidate/InterviewHistory.tsx';
-import { CandidateProfile } from './components/candidate/CandidateProfile.tsx';
-import { AdminDashboard } from './components/admin/AdminDashboard.tsx';
+const CandidateDashboard = React.lazy(() => import('./components/candidate/CandidateDashboard.tsx').then((module) => ({ default: module.CandidateDashboard })));
+const InterviewSetup = React.lazy(() => import('./components/candidate/InterviewSetup.tsx').then((module) => ({ default: module.InterviewSetup })));
+const InterviewRoom = React.lazy(() => import('./components/candidate/InterviewRoom.tsx').then((module) => ({ default: module.InterviewRoom })));
+const AssessmentReport = React.lazy(() => import('./components/candidate/AssessmentReport.tsx').then((module) => ({ default: module.AssessmentReport })));
+const InterviewHistory = React.lazy(() => import('./components/candidate/InterviewHistory.tsx').then((module) => ({ default: module.InterviewHistory })));
+const CandidateProfile = React.lazy(() => import('./components/candidate/CandidateProfile.tsx').then((module) => ({ default: module.CandidateProfile })));
+const AdminDashboard = React.lazy(() => import('./components/admin/AdminDashboard.tsx').then((module) => ({ default: module.AdminDashboard })));
 import { ThemeProvider } from './context/ThemeContext.tsx';
 
 function AppContent() {
@@ -101,60 +101,71 @@ function AppContent() {
 
       {/* Main Content View Switcher */}
       <main className="flex-1 flex flex-col">
-        {currentView === 'landing' && (
-          <LandingPage
-            onStartInterview={handleStartSetup}
-            onOpenPrivacy={() => setPrivacyModalOpen(true)}
-          />
-        )}
+        <React.Suspense
+          fallback={(
+            <div className="flex flex-1 items-center justify-center px-4 py-16" role="status" aria-live="polite">
+              <div className="text-center space-y-3">
+                <div className="w-9 h-9 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-sm font-medium text-muted">Loading your workspace…</p>
+              </div>
+            </div>
+          )}
+        >
+          {currentView === 'landing' && (
+            <LandingPage
+              onStartInterview={handleStartSetup}
+              onOpenPrivacy={() => setPrivacyModalOpen(true)}
+            />
+          )}
 
-        {currentView === 'dashboard' && (
-          <CandidateDashboard
-            onStartSetup={handleStartSetup}
-            onViewReport={handleViewReport}
-            onViewHistory={() => setCurrentView('history')}
-          />
-        )}
+          {currentView === 'dashboard' && (
+            <CandidateDashboard
+              onStartSetup={handleStartSetup}
+              onViewReport={handleViewReport}
+              onViewHistory={() => setCurrentView('history')}
+            />
+          )}
 
-        {currentView === 'setup' && (
-          <InterviewSetup
-            onInterviewCreated={handleInterviewCreated}
-            onCancel={() => setCurrentView('dashboard')}
-            onOpenPrivacy={() => setPrivacyModalOpen(true)}
-          />
-        )}
+          {currentView === 'setup' && (
+            <InterviewSetup
+              onInterviewCreated={handleInterviewCreated}
+              onCancel={() => setCurrentView('dashboard')}
+              onOpenPrivacy={() => setPrivacyModalOpen(true)}
+            />
+          )}
 
-        {currentView === 'room' && activeInterviewId && (
-          <InterviewRoom
-            interviewId={activeInterviewId}
-            onInterviewFinished={handleInterviewFinished}
-            onExit={() => setCurrentView('dashboard')}
-          />
-        )}
+          {currentView === 'room' && activeInterviewId && (
+            <InterviewRoom
+              interviewId={activeInterviewId}
+              onInterviewFinished={handleInterviewFinished}
+              onExit={() => setCurrentView('dashboard')}
+            />
+          )}
 
-        {currentView === 'report' && selectedReportId && (
-          <AssessmentReport
-            interviewId={selectedReportId}
-            onBackToDashboard={() => setCurrentView('dashboard')}
-            onStartNew={handleStartSetup}
-          />
-        )}
+          {currentView === 'report' && selectedReportId && (
+            <AssessmentReport
+              interviewId={selectedReportId}
+              onBackToDashboard={() => setCurrentView('dashboard')}
+              onStartNew={handleStartSetup}
+            />
+          )}
 
-        {currentView === 'history' && (
-          <InterviewHistory
-            onViewReport={handleViewReport}
-            onStartNew={handleStartSetup}
-            onBack={() => setCurrentView('dashboard')}
-          />
-        )}
+          {currentView === 'history' && (
+            <InterviewHistory
+              onViewReport={handleViewReport}
+              onStartNew={handleStartSetup}
+              onBack={() => setCurrentView('dashboard')}
+            />
+          )}
 
-        {currentView === 'profile' && (
-          <CandidateProfile onBack={() => setCurrentView('dashboard')} />
-        )}
+          {currentView === 'profile' && (
+            <CandidateProfile onBack={() => setCurrentView('dashboard')} />
+          )}
 
-        {currentView === 'admin' && (
-          <AdminDashboard onViewCandidateReport={handleViewReport} />
-        )}
+          {currentView === 'admin' && (
+            <AdminDashboard onViewCandidateReport={handleViewReport} />
+          )}
+        </React.Suspense>
       </main>
 
       {/* Footer */}

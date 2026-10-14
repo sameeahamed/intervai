@@ -85,10 +85,10 @@ export const PrivacyConsentModal: React.FC<PrivacyConsentModalProps> = ({
                   2. Camera Engagement & Ethical Constraints
                 </h4>
                 <p className="mt-1 text-xs leading-relaxed text-zinc-300">
-                  Camera video is processed <strong>locally inside your browser</strong> to evaluate basic practice presentation factors (lighting quality, camera stability, and center framing).
+                  Camera video is processed <strong>locally inside your browser</strong>. When enabled, face count (zero, one, or multiple) and framing are checked to give live guidance. Video frames and face counts are not uploaded or stored; only aggregate camera metrics may appear in your report.
                 </p>
                 <div className="mt-2 p-2 bg-blue-950/40 rounded-lg text-[11px] text-blue-300 border border-blue-900/60">
-                  <strong>Strict Ethical Guarantee:</strong> We DO NOT perform facial recognition, biometric identity scanning, or psychological profiling (e.g. honesty, mental health, or protected demographic characteristics).
+                  <strong>Strict Ethical Guarantee:</strong> We do not identify who a person is, perform biometric identity matching, or infer psychology (such as honesty, mental health, or protected characteristics). The face detector model runs locally in your browser.
                 </div>
               </div>
             </div>

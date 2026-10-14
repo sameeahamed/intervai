@@ -30,7 +30,8 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  CartesianGrid
+  CartesianGrid,
+  Legend
 } from 'recharts';
 
 interface CandidateDashboardProps {
@@ -75,13 +76,21 @@ export const CandidateDashboard: React.FC<CandidateDashboardProps> = ({
     );
   }
 
-  const radarData = analytics?.radarSkills || [];
+  const radarData = (analytics?.radarSkills || []).map((skill: any) => ({
+    ...skill,
+    shortSubject: ({
+      'Technical Accuracy': 'Technical',
+      'Reasoning & Logic': 'Reasoning',
+      'Visual Presence': 'Presence',
+    } as Record<string, string>)[skill.subject] || skill.subject,
+  }));
 
-  const scoreHistory = analytics?.scoreHistory || [];
+  // The API returns most recent sessions first; the chart reads left-to-right chronologically.
+  const scoreHistory = [...(analytics?.scoreHistory || [])].reverse();
   const recentCompleted: Interview[] = analytics?.recentCompleted || [];
   const completedCount = analytics?.completedCount ?? 0;
 
-  const topCompetency = radarData.length
+  const topCompetency = completedCount > 0 && radarData.length
     ? radarData.reduce((best: any, cur: any) => (cur.score > best.score ? cur : best))
     : null;
 
@@ -91,9 +100,9 @@ export const CandidateDashboard: React.FC<CandidateDashboardProps> = ({
       : null;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in text-[#e5e7eb]">
+    <div className="candidate-dashboard max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in text-[#e5e7eb]">
       {/* 1. WELCOME BANNER & PRIMARY CTA */}
-      <div className="relative p-6 sm:p-8 bg-gradient-to-r from-blue-950/80 via-indigo-950/60 to-[#121215] border border-blue-900/60 rounded-3xl text-white shadow-xl overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+      <div className="dashboard-welcome relative p-6 sm:p-8 bg-gradient-to-r from-blue-950/80 via-indigo-950/60 to-[#121215] border border-blue-900/60 rounded-3xl text-white shadow-xl overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="space-y-2 max-w-xl">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-semibold">
             <Sparkles className="w-3.5 h-3.5 text-blue-400" />
@@ -114,7 +123,7 @@ export const CandidateDashboard: React.FC<CandidateDashboardProps> = ({
             className="w-full sm:w-auto px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm rounded-2xl shadow-lg shadow-blue-600/30 transition flex items-center justify-center gap-2 group"
           >
             <Mic className="w-4 h-4" />
-            <span>Configure New Interview</span>
+            <span>Start a New Interview</span>
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </button>
         </div>
@@ -131,7 +140,7 @@ export const CandidateDashboard: React.FC<CandidateDashboardProps> = ({
             </div>
           </div>
           <div className="text-3xl font-black text-white">
-            {analytics?.averageOverallScore ?? 0}%
+            {completedCount > 0 ? `${analytics?.averageOverallScore ?? 0}%` : '—'}
           </div>
           <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-medium">
             <TrendingUp className="w-3.5 h-3.5" />
@@ -193,101 +202,131 @@ export const CandidateDashboard: React.FC<CandidateDashboardProps> = ({
       {/* 3. CHARTS GRID (SKILL RADAR & PROGRESS OVER TIME) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Radar Chart */}
-        <div className="p-6 bg-[#121215] border border-[#27272a] rounded-2xl shadow-sm space-y-4">
+        <div className="dashboard-chart-card p-6 bg-[#121215] border border-[#27272a] rounded-2xl shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-base font-bold text-white">
                 Multi-Dimensional Skill Matrix
               </h3>
-              <p className="text-xs text-zinc-400">
-                Aggregated performance across 6 core interview dimensions
+              <p className="text-xs text-zinc-400 mt-1">
+                Average scores from completed, scored interviews
               </p>
             </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-950/80 text-blue-300 border border-blue-800/60">
-              AI Assessment
+            <span className="dashboard-chart-badge">
+              {completedCount} {completedCount === 1 ? 'assessment' : 'assessments'}
             </span>
           </div>
 
-          <div className="w-full h-64 flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={radarData}>
-                <PolarGrid stroke="#27272a" strokeDasharray="3 3" />
-                <PolarAngleAxis dataKey="subject" tick={{ fill: '#a1a1aa', fontSize: 11 }} />
-                <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#3f3f46" tick={{ fill: '#71717a' }} />
-                <Radar
-                  name="Candidate"
-                  dataKey="score"
-                  stroke="#3b82f6"
-                  fill="#3b82f6"
-                  fillOpacity={0.4}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
+          {completedCount > 0 ? (
+            <>
+              <div className="w-full h-56 flex items-center justify-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart data={radarData} outerRadius="72%">
+                    <PolarGrid stroke="var(--border-strong)" strokeDasharray="3 4" />
+                    <PolarAngleAxis dataKey="shortSubject" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
+                    <PolarRadiusAxis angle={30} domain={[0, 100]} tickCount={5} axisLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 9 }} />
+                    <Tooltip
+                      formatter={(value: number) => [`${value}/100`, 'Average score']}
+                      contentStyle={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: '12px', color: 'var(--text)', fontSize: '12px' }}
+                    />
+                    <Radar
+                      name="Average score"
+                      dataKey="score"
+                      stroke="#4f46e5"
+                      strokeWidth={2.5}
+                      fill="#6366f1"
+                      fillOpacity={0.22}
+                      dot={{ r: 3, fill: '#4f46e5', strokeWidth: 0 }}
+                    />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="dashboard-dimension-grid">
+                {radarData.map((skill: any) => (
+                  <div className="dashboard-dimension" key={skill.subject}>
+                    <div className="dashboard-dimension-label"><span>{skill.subject}</span><strong>{skill.score}</strong></div>
+                    <div className="dashboard-dimension-track"><span style={{ width: `${Math.max(0, Math.min(100, skill.score))}%` }} /></div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="dashboard-chart-empty">
+              <BarChart2 />
+              <strong>Your skill profile will appear here</strong>
+              <span>Complete a scored interview to see your actual results across all six dimensions.</span>
+            </div>
+          )}
         </div>
 
         {/* Progress Line Chart */}
-        <div className="p-6 bg-[#121215] border border-[#27272a] rounded-2xl shadow-sm space-y-4">
+        <div className="dashboard-chart-card p-6 bg-[#121215] border border-[#27272a] rounded-2xl shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-base font-bold text-white">
                 Performance Trajectory
               </h3>
-              <p className="text-xs text-zinc-400">
-                Score progression across recent interview evaluations
+              <p className="text-xs text-zinc-400 mt-1">
+                Overall and technical scores, in date order
               </p>
             </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/60">
-              {trendPts === null ? 'No trend data' : `${trendPts >= 0 ? '+' : ''}${trendPts} pts`}
+            <span className="dashboard-chart-badge">
+              {scoreHistory.length >= 2
+                ? `${trendPts! >= 0 ? '+' : ''}${trendPts} pts`
+                : scoreHistory.length === 1 ? 'Baseline' : 'No scores yet'}
             </span>
           </div>
 
           <div className="w-full h-64 flex items-center justify-center">
             {scoreHistory.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={scoreHistory}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                  <XAxis dataKey="date" stroke="#52525b" tick={{ fill: '#a1a1aa' }} fontSize={11} />
-                  <YAxis domain={[0, 100]} stroke="#52525b" tick={{ fill: '#a1a1aa' }} fontSize={11} />
+                <LineChart data={scoreHistory} margin={{ top: 8, right: 10, left: -14, bottom: 2 }}>
+                  <CartesianGrid strokeDasharray="3 4" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
+                  <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
                   <Tooltip
+                    labelFormatter={(label, payload) => payload?.[0]?.payload?.role ? `${label} · ${payload[0].payload.role}` : label}
+                    formatter={(value: number, name: string) => [`${value}/100`, name]}
                     contentStyle={{
-                      backgroundColor: '#121215',
-                      borderColor: '#27272a',
+                      backgroundColor: 'var(--surface)',
+                      borderColor: 'var(--border)',
                       borderRadius: '12px',
-                      color: '#f4f4f5',
+                      color: 'var(--text)',
                       fontSize: '12px',
                     }}
                   />
+                  <Legend verticalAlign="top" height={30} iconType="circle" wrapperStyle={{ fontSize: '10px', color: 'var(--text-2)' }} />
                   <Line
                     type="monotone"
                     dataKey="overallScore"
-                    name="Overall Score"
-                    stroke="#3b82f6"
-                    strokeWidth={3}
-                    dot={{ r: 4, fill: '#3b82f6' }}
+                    name="Overall score"
+                    stroke="#4f46e5"
+                    strokeWidth={2.5}
+                    activeDot={{ r: 5, strokeWidth: 0 }}
+                    dot={{ r: 4, fill: '#4f46e5', stroke: 'var(--surface)', strokeWidth: 2 }}
                   />
                   <Line
                     type="monotone"
                     dataKey="technicalScore"
-                    name="Technical Accuracy"
-                    stroke="#10b981"
+                    name="Technical"
+                    stroke="#0f9f8f"
                     strokeWidth={2}
-                    strokeDasharray="4 4"
-                    dot={{ r: 3, fill: '#10b981' }}
+                    activeDot={{ r: 4, strokeWidth: 0 }}
+                    dot={{ r: 3, fill: '#0f9f8f', stroke: 'var(--surface)', strokeWidth: 2 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="p-8 text-center bg-[#18181c] rounded-xl border border-dashed border-[#27272a] w-full">
-                <p className="text-sm font-medium text-zinc-300">
-                  No completed evaluations yet.
-                </p>
-                <p className="text-xs text-zinc-400 mt-1">
-                  Complete an adaptive voice assessment to see your score trajectory.
-                </p>
+              <div className="dashboard-chart-empty">
+                <TrendingUp />
+                <strong>Your score history starts with your first interview</strong>
+                <span>Each completed assessment adds a dated score point here.</span>
               </div>
             )}
           </div>
+          {scoreHistory.length === 1 && (
+            <p className="dashboard-baseline-note">One assessment gives you a baseline. Complete another interview to see your progress over time.</p>
+          )}
         </div>
       </div>
 

@@ -32,6 +32,7 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
   const [newSkill, setNewSkill] = useState('');
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [resumeFileName, setResumeFileName] = useState<string>(user?.resumeFileName || '');
   const [resumeUploading, setResumeUploading] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
@@ -110,6 +111,7 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
     e.preventDefault();
     setSaving(true);
     setSuccessMsg(null);
+    setSaveError(null);
     try {
       await updateUser({
         name,
@@ -120,8 +122,8 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
       });
       setSuccessMsg('Profile preferences updated successfully!');
       setTimeout(() => setSuccessMsg(null), 3500);
-    } catch {
-      // err
+    } catch (err: any) {
+      setSaveError(err?.message || 'Could not save your profile. Check your connection and try again.');
     } finally {
       setSaving(false);
     }
@@ -140,40 +142,55 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
+    <div className="candidate-profile max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
       {/* Header */}
-      <div className="border-b border-[#27272a] pb-6">
+      <div className="profile-page-header">
         <button
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-white transition mb-2"
+          className="profile-back-button inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-white transition mb-3"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Dashboard</span>
         </button>
-        <h1 className="text-2xl font-black text-white">
-          Candidate Profile & Privacy Controls
-        </h1>
-        <p className="text-xs text-zinc-400">
-          Manage your career targets, target skill competencies, and data sovereignty
-        </p>
+        <div className="profile-heading-row">
+          <div className="profile-heading-icon"><User className="w-5 h-5" /></div>
+          <div>
+            <h1 className="text-2xl font-black text-white">Your candidate profile</h1>
+            <p className="text-xs text-zinc-400">Keep your career goals, skills, and interview preferences up to date.</p>
+          </div>
+        </div>
       </div>
 
       {successMsg && (
-        <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-800/60 text-emerald-300 text-xs flex items-center gap-2">
+        <div className="profile-feedback profile-feedback-success p-4 rounded-2xl text-xs flex items-center gap-2" role="status" aria-live="polite">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{successMsg}</span>
         </div>
       )}
+      {saveError && (
+        <div className="profile-feedback profile-feedback-error p-4 rounded-2xl text-xs flex items-center gap-2" role="alert">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{saveError}</span>
+        </div>
+      )}
 
       {/* Main Form */}
-      <form onSubmit={handleSave} className="bg-[#121215] border border-[#27272a] rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+      <form onSubmit={handleSave} className="profile-card bg-[#121215] border border-[#27272a] rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+        <div className="profile-section-intro">
+          <div className="profile-section-icon"><Sparkles className="w-4 h-4" /></div>
+          <div>
+            <h2>Career profile</h2>
+            <p>These details help tailor questions to the roles you want to practice for.</p>
+          </div>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
+            <label htmlFor="profile-name" className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
               Full Name
             </label>
             <input
               type="text"
+              id="profile-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3.5 py-2.5 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white"
@@ -181,11 +198,12 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
+            <label htmlFor="profile-email" className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
               Email Address
             </label>
             <input
               type="email"
+              id="profile-email"
               disabled
               value={user?.email || ''}
               className="w-full px-3.5 py-2.5 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-zinc-400 cursor-not-allowed"
@@ -195,11 +213,12 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
+            <label htmlFor="profile-target-role" className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
               Target Job Role
             </label>
             <input
               type="text"
+              id="profile-target-role"
               value={targetRole}
               onChange={(e) => setTargetRole(e.target.value)}
               className="w-full px-3.5 py-2.5 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white"
@@ -207,11 +226,12 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
+            <label htmlFor="profile-experience-level" className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
               Experience Level
             </label>
             <select
               value={experienceLevel}
+              id="profile-experience-level"
                onChange={(e) => setExperienceLevel(e.target.value as any)}
               className="w-full px-3.5 py-2.5 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white"
             >
@@ -232,13 +252,14 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
             {skills.map((s) => (
               <span
                 key={s}
-                className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#18181c] text-zinc-200 text-xs font-medium rounded-full"
+                className="profile-skill-chip inline-flex items-center gap-1.5 px-3 py-1 bg-[#18181c] text-zinc-200 text-xs font-medium rounded-full"
               >
                 {s}
                 <button
                   type="button"
                   onClick={() => setSkills(skills.filter((sk) => sk !== s))}
-                  className="hover:text-red-500"
+                  aria-label={`Remove ${s}`}
+                  className="profile-skill-remove hover:text-red-500"
                 >
                   ×
                 </button>
@@ -249,6 +270,7 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
           <div className="flex gap-2">
             <input
               type="text"
+              aria-label="Add a profile skill"
               value={newSkill}
               onChange={(e) => setNewSkill(e.target.value)}
               placeholder="Add skill tag..."
@@ -271,12 +293,12 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
 
         {/* Resume / Experience Text (Optional) */}
         <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
+          <label htmlFor="profile-resume" className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
             Resume / Experience Summary (Optional)
           </label>
 
           {/* PDF upload */}
-          <div className="mb-3 p-3.5 bg-[#18181c] border border-[#27272a] rounded-xl">
+          <div className="profile-resume-panel mb-3 p-3.5 bg-[#18181c] border border-[#27272a] rounded-xl">
             <div className="flex flex-wrap items-center gap-3">
               <input
                 ref={resumeInputRef}
@@ -336,6 +358,7 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
           </div>
 
           <textarea
+            id="profile-resume"
             value={resumeText}
             onChange={(e) => setResumeText(e.target.value)}
             rows={6}
@@ -353,7 +376,7 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
           </div>
         </div>
 
-        <div className="flex justify-end pt-2">
+        <div className="profile-save-row flex justify-end pt-2">
           <button
             type="submit"
             disabled={saving}
@@ -366,7 +389,7 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
       </form>
 
       {/* GDPR Data Erasure Zone */}
-      <div className="bg-red-950/20 border border-red-900/40 rounded-3xl p-6 sm:p-8 space-y-4">
+      <div className="profile-danger-zone bg-red-950/20 border border-red-900/40 rounded-3xl p-6 sm:p-8 space-y-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-red-950 text-red-400 flex items-center justify-center">
             <Trash2 className="w-5 h-5" />

@@ -10,13 +10,10 @@ import {
   Video,
   BarChart3,
   ShieldCheck,
-  CheckCircle2,
   ArrowRight,
-  Play,
   Volume2,
-  HelpCircle,
-  Users,
-  Award,
+  CircleCheck,
+  Sparkle,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
@@ -76,81 +73,100 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   ];
 
   return (
-    <div className="w-full bg-[#0a0a0b] text-[#e5e7eb] selection:bg-blue-600 selection:text-white">
+    <div className="landing-page w-full bg-[#0a0a0b] text-[#e5e7eb] selection:bg-blue-600 selection:text-white">
       {/* 1. HERO SECTION */}
-      <section className="relative pt-16 pb-24 overflow-hidden border-b border-[#27272a]">
-        {/* Background Gradients */}
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute top-1/3 left-1/4 w-[350px] h-[350px] bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+      <section className="landing-hero relative overflow-hidden border-b border-[#27272a]">
+        <div className="landing-hero-glow landing-hero-glow-one" />
+        <div className="landing-hero-glow landing-hero-glow-two" />
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="text-center max-w-3xl mx-auto space-y-6">
-            {/* Top Badge */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-950/60 border border-blue-800/60 text-blue-300 text-xs font-semibold shadow-inner">
-              <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-              <span>Next-Generation AI Voice Interview Platform</span>
+        <div className="landing-hero-inner max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="landing-hero-copy">
+            <div className="landing-eyebrow">
+              <Sparkles className="w-4 h-4" />
+              <span>Practice that sounds like the real thing</span>
             </div>
 
-            {/* Main Headline */}
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white leading-tight">
-              Master Your Next Interview with{' '}
-              <span className="bg-gradient-to-r from-blue-400 via-indigo-300 to-cyan-400 bg-clip-text text-transparent">
-                Conversational AI
-              </span>
+            <h1 className="landing-title">
+              Walk into your next interview <span>ready to speak.</span>
             </h1>
 
-            {/* Subtitle */}
-            <p className="text-base sm:text-lg text-zinc-300 max-w-2xl mx-auto leading-relaxed">
-              Practice real-time spoken voice interviews with an adaptive AI assessor. Receive instant structured feedback on technical accuracy, communication, reasoning, and presentation.
+            <p className="landing-subtitle">
+              Build confidence through realistic voice interviews, then get clear feedback on how you think, explain, and solve problems.
             </p>
 
-            {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+            <div className="landing-actions">
               <button
                 id="btn-hero-start"
                 onClick={onStartInterview}
-                className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-base rounded-2xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2.5 group"
+                className="landing-primary group"
               >
-                <span>Launch Interview Room</span>
+                <span>Start a practice interview</span>
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </button>
 
               <button
                 id="btn-hero-demo-voice"
                 onClick={handleTestVoice}
-                className="w-full sm:w-auto px-6 py-3.5 bg-[#18181c] hover:bg-[#202026] text-zinc-200 border border-[#27272a] font-semibold text-base rounded-2xl transition flex items-center justify-center gap-2"
+                className="landing-secondary"
               >
-                <Volume2 className={`w-4 h-4 ${demoSpeaking ? 'text-blue-400 animate-pulse' : ''}`} />
-                <span>{demoSpeaking ? 'Listening to AI Voice...' : 'Preview AI Voice'}</span>
+                <Volume2 className={`w-4 h-4 ${demoSpeaking ? 'text-blue-500 animate-pulse' : ''}`} />
+                <span>{demoSpeaking ? 'Playing interviewer voice…' : 'Hear the interviewer'}</span>
               </button>
             </div>
 
-            {/* Mini Waveform preview */}
             {demoSpeaking && (
-              <div className="pt-2 animate-fade-in max-w-xs mx-auto">
+              <div className="landing-waveform animate-fade-in">
                 <AudioWaveform voiceState="ai_speaking" />
               </div>
             )}
 
-            {/* Feature Pills */}
-            <div className="pt-8 flex flex-wrap items-center justify-center gap-6 text-xs text-zinc-400">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Real-Time Voice STT & TTS</span>
+            <div className="landing-trust-row" aria-label="Practice features">
+              <span><CircleCheck /> Adaptive questions</span>
+              <span><CircleCheck /> Private by design</span>
+              <span><CircleCheck /> Useful feedback</span>
+            </div>
+          </div>
+
+          <div className="landing-visual" aria-label="Example interview session preview">
+            <div className="landing-orbit landing-orbit-one" />
+            <div className="landing-orbit landing-orbit-two" />
+            <div className="landing-session-card">
+              <div className="landing-session-topline">
+                <div className="landing-session-brand">
+                  <span className="landing-session-mark"><Sparkle /></span>
+                  <span><strong>Practice room</strong><small>Full-stack engineer</small></span>
+                </div>
+                <span className="landing-session-status"><i /> SESSION PREVIEW</span>
               </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Adaptive Dynamic Difficulty</span>
+
+              <div className="landing-question-label"><span>01</span> YOUR INTERVIEWER ASKS</div>
+              <p className="landing-question">“Tell me about a technical decision you made that improved a product.”</p>
+
+              <div className="landing-voice-row">
+                <div className="landing-avatar"><Sparkles /></div>
+                <div className="landing-voice-content">
+                  <div className="landing-voice-copy"><span>IntervAI</span><small>{demoSpeaking ? 'Speaking now' : 'Voice interview'}</small></div>
+                  <div className="landing-bars" aria-hidden="true">
+                    {[14, 23, 17, 30, 20, 36, 24, 15, 28, 18, 32, 21, 13, 25, 17, 31, 19, 12, 26, 16, 22, 14, 29, 18, 24, 13, 20, 30, 16, 23, 12, 27, 18, 22, 14, 31, 17, 25, 13, 20].map((height, index) => (
+                      <span key={index} style={{ height: `${height}px` }} />
+                    ))}
+                  </div>
+                </div>
+                <span className="landing-audio-icon"><Volume2 /></span>
               </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Zero Facial Recognition</span>
+
+              <div className="landing-answer-hint">
+                <span className="landing-mic"><Mic /></span>
+                <span><strong>Your turn to answer</strong><small>Speak naturally. Take a moment to think.</small></span>
+                <span className="landing-answer-arrow"><ArrowRight /></span>
               </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Comprehensive PDF/CSV Reports</span>
+
+              <div className="landing-feedback-strip">
+                <span><Brain /> Thoughtful follow-ups</span>
+                <span><BarChart3 /> Feedback you can use</span>
               </div>
             </div>
+            <div className="landing-floating-note"><span><ShieldCheck /></span><div><strong>Your practice stays yours</strong><small>No facial recognition. Ever.</small></div></div>
           </div>
         </div>
       </section>

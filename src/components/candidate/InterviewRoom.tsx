@@ -255,7 +255,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
       animFrameRef.current = null;
     }
     if (voiceServiceRef.current) voiceServiceRef.current.cleanup();
-    if (visionServiceRef.current) visionServiceRef.current.stopAnalysis();
+    if (visionServiceRef.current) visionServiceRef.current.dispose();
     stopStream(micStreamRef.current);
     stopStream(videoStreamRef.current);
     micStreamRef.current = null;
@@ -1239,20 +1239,52 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
               {/* Privacy-preserving framing HUD + centre guide (only while live) */}
               {cameraStatus === 'live' && (
                 <>
-                  <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-sm text-[10px] font-semibold text-white/90 pointer-events-none">
+                  <div className={`absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full backdrop-blur-sm text-[10px] font-semibold pointer-events-none ${
+                    visualState?.faceDetectionStatus === 'error'
+                      ? 'bg-red-950/90 text-red-100'
+                      : visualState?.faceCount === 1 && visualState.isCentered
+                      ? 'bg-emerald-950/85 text-emerald-100'
+                      : 'bg-black/75 text-white/95'
+                  }`}>
                     <div
                       className={`w-2 h-2 rounded-full ${
-                        visualState?.isCentered ? 'bg-emerald-400' : 'bg-amber-400'
+                        visualState?.faceDetectionStatus === 'error'
+                          ? 'bg-red-400'
+                          : visualState?.faceCount === 1 && visualState.isCentered
+                          ? 'bg-emerald-400'
+                          : 'bg-amber-400'
                       }`}
                     />
-                    <span>{visualState?.isCentered ? 'Framed & Centered' : 'Adjust framing'}</span>
+                    <span>
+                      {visualState?.faceDetectionStatus === 'error'
+                        ? 'Face check unavailable'
+                        : visualState?.faceDetectionStatus !== 'ready'
+                        ? 'Loading face check…'
+                        : visualState.faceCount === 0
+                        ? 'No face detected'
+                        : (visualState?.faceCount ?? 0) > 1
+                        ? 'Multiple faces detected'
+                        : visualState?.isCentered
+                        ? 'One face • centered'
+                        : 'One face • adjust framing'}
+                    </span>
                   </div>
 
                   <div className="absolute inset-x-1/4 inset-y-8 border-2 border-dashed border-white/20 rounded-2xl pointer-events-none" />
 
-                  <div className="absolute bottom-2 inset-x-3 text-center pointer-events-none">
-                    <span className="px-2 py-0.5 bg-black/80 backdrop-blur-sm text-[9px] text-zinc-300 rounded-md border border-white/10">
-                      Camera framing is analysed locally in your browser only • not recorded or uploaded
+                  <div className="absolute bottom-2 inset-x-3 text-center pointer-events-none" role="status" aria-live="polite">
+                    <span className="inline-block max-w-full px-2 py-1 bg-black/85 backdrop-blur-sm text-[10px] leading-snug text-white rounded-md border border-white/15">
+                      {visualState?.faceDetectionStatus === 'error'
+                        ? visualState.faceDetectionError || 'Face detection is unavailable. You can continue without it.'
+                        : visualState?.faceDetectionStatus !== 'ready'
+                        ? 'Loading local face check… Video frames stay on this device.'
+                        : visualState.faceCount === 0
+                        ? 'No face detected. Move into view and face the camera.'
+                        : (visualState.faceCount ?? 0) > 1
+                        ? 'More than one face detected. Please make sure only you are in frame.'
+                        : visualState.isCentered
+                        ? 'One face detected and centered. Face count is checked locally and is not saved.'
+                        : 'One face detected. Center yourself in the guide. Face count is not saved.'}
                     </span>
                   </div>
                 </>

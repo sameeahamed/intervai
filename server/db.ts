@@ -837,7 +837,7 @@ class Database {
         'Recommend pairing technical design with documented architecture diagrams in live team sessions',
         'Continue exploring cutting-edge asynchronous concurrency patterns in React 19'
       ],
-      executiveSummary: 'Alex demonstrated outstanding technical depth, crisp architectural reasoning, and exceptional poise throughout this 4-question adaptive technical interview. Overall evaluation score is in the top 5th percentile for Senior Full-Stack candidates.',
+      executiveSummary: 'Alex demonstrated strong technical depth, crisp architectural reasoning, and clear communication throughout this 4-question adaptive technical interview, with a 91/100 overall score.',
       suggestedRoles: ['Senior Full-Stack Engineer', 'Lead Systems Architect', 'Backend Platform Lead'],
       createdAt: '2026-02-20T14:18:35Z'
     };

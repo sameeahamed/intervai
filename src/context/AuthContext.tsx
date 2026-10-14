@@ -18,6 +18,7 @@ interface AuthContextType {
   logout: () => void;
   quickDemoLogin: (role: UserRole) => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -104,6 +105,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(res.user);
   };
 
+  const refreshUser = async () => {
+    if (!user) return;
+    try {
+      const res = await api.getMe();
+      setUser(res.user);
+    } catch {
+      /* keep existing session on transient failure */
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -118,6 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         quickDemoLogin,
         updateUser,
+        refreshUser,
       }}
     >
       {children}

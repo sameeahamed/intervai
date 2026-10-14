@@ -17,6 +17,7 @@ import { AssessmentReport } from './components/candidate/AssessmentReport.tsx';
 import { InterviewHistory } from './components/candidate/InterviewHistory.tsx';
 import { CandidateProfile } from './components/candidate/CandidateProfile.tsx';
 import { AdminDashboard } from './components/admin/AdminDashboard.tsx';
+import { ThemeProvider } from './context/ThemeContext.tsx';
 
 function AppContent() {
   const { isAuthenticated, isAdmin } = useAuth();
@@ -85,7 +86,7 @@ function AppContent() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#0a0a0b] text-[#e5e7eb] selection:bg-blue-600 selection:text-white">
+    <div className="app-shell flex flex-col min-h-screen selection:bg-indigo-500/30">
       {/* Top Navbar */}
       <Navbar
         currentView={currentView}
@@ -183,8 +184,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

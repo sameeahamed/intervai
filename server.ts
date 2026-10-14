@@ -17,6 +17,55 @@ import {
 } from './server/ai.ts';
 import { Interview, Question, Answer, VisualEngagementMetrics, IntegrityEvent, User } from './src/types/index.ts';
 import { createAuthToken, isAuthSecretEphemeral, verifyAuthToken } from './server/auth.ts';
+import { execFile } from 'child_process';
+
+// PDF text extraction runs in a short-lived plain-Node child process.
+// Reason: the `tsx` loader (used by `npm run dev`) breaks PDF.js's xref-recovery
+// path inside `pdf-parse`, so calling it in-process throws "bad XRef entry".
+// A plain `node` child (NODE_OPTIONS cleared) avoids the loader and works
+// identically in dev and in the bundled CJS production server.
+const PDF_EXTRACT_SCRIPT = `
+const pdfParse = require('pdf-parse/lib/pdf-parse.js');
+const chunks = [];
+process.stdin.on('data', (d) => chunks.push(d));
+process.stdin.on('end', async () => {
+  try {
+    const buf = Buffer.from(Buffer.concat(chunks).toString('utf8').trim(), 'base64');
+    const r = await pdfParse(buf);
+    process.stdout.write(JSON.stringify({ ok: true, text: r.text || '', numpages: r.numpages || 0 }));
+  } catch (e) {
+    process.stdout.write(JSON.stringify({ ok: false, error: String((e && e.message) || e) }));
+  }
+});
+`;
+
+function extractPdfText(buffer: Buffer): Promise<{ text: string; numpages: number }> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      process.execPath,
+      ['-e', PDF_EXTRACT_SCRIPT],
+      { maxBuffer: 16 * 1024 * 1024, timeout: 20000, env: { ...process.env, NODE_OPTIONS: '' } },
+      (err, stdout) => {
+        if (!stdout) {
+          return reject(err || new Error('PDF extraction produced no output.'));
+        }
+        try {
+          const parsed = JSON.parse(stdout);
+          if (parsed.ok) resolve({ text: parsed.text, numpages: parsed.numpages });
+          else reject(new Error(parsed.error || 'PDF extraction failed.'));
+        } catch {
+          reject(new Error('PDF extraction returned malformed output.'));
+        }
+      }
+    );
+    if (child.stdin) {
+      child.stdin.on('error', () => {
+        /* ignore broken pipe; callback handles failure */
+      });
+      child.stdin.end(buffer.toString('base64'));
+    }
+  });
+}
 
 // Helper for lightweight JWT-like token extraction
 interface AuthenticatedRequest extends Request {
@@ -106,6 +155,21 @@ function cleanUntrustedText(value: unknown, max: number = MAX_UNTRUSTED_TEXT_CHA
 
 function getCandidateResumeForInterview(interview: Interview): string | undefined {
   return db.getUserById(interview.candidateId)?.resumeText;
+}
+
+// PDF resume upload limits. The raw file is only held in memory long enough to
+// extract text; it is never written to disk or sent to any third party.
+const MAX_RESUME_PDF_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_RESUME_TEXT_CHARS = 20000;
+
+// Sanitize a user-supplied filename into a safe display-only string. The value
+// is never used as a filesystem path.
+function sanitizeResumeFileName(name: unknown): string {
+  const base = String(name || 'resume.pdf')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim();
+  const safe = base.replace(/[^a-zA-Z0-9._ -]/g, '_').replace(/\.{2,}/g, '.');
+  return (safe || 'resume.pdf').slice(0, 120);
 }
 
 // Top-level (template) questions only; adaptive follow-ups carry a parentQuestionId
@@ -354,6 +418,102 @@ async function startServer() {
       res.json({ user: updated });
     } catch (err: any) {
       res.status(500).json({ error: 'Failed to update profile.' });
+    }
+  });
+
+  // Upload a PDF resume: accepts a base64 payload, validates the PDF signature,
+  // extracts plain text server-side, and stores only that text plus a sanitized
+  // display filename. The raw file is never written to disk or forwarded.
+  app.post('/api/auth/resume', requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const body = req.body || {};
+      const rawInput = typeof body.fileBase64 === 'string' ? body.fileBase64 : '';
+      if (!rawInput) {
+        return res.status(400).json({ error: 'No file was provided.' });
+      }
+
+      const fileName = sanitizeResumeFileName(body.fileName);
+      if (!/\.pdf$/i.test(fileName)) {
+        return res.status(400).json({ error: 'Only PDF resumes are supported.' });
+      }
+
+      const commaIdx = rawInput.indexOf(',');
+      const rawBase64 =
+        rawInput.startsWith('data:') && commaIdx !== -1 ? rawInput.slice(commaIdx + 1) : rawInput;
+
+      let buffer: Buffer;
+      try {
+        buffer = Buffer.from(rawBase64, 'base64');
+      } catch {
+        return res.status(400).json({ error: 'The file could not be decoded.' });
+      }
+
+      if (buffer.length === 0) {
+        return res.status(400).json({ error: 'The file is empty.' });
+      }
+      if (buffer.length > MAX_RESUME_PDF_BYTES) {
+        return res.status(413).json({ error: 'Resume is too large. The maximum size is 5 MB.' });
+      }
+      if (buffer.length < 5 || buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+        return res.status(400).json({ error: 'That file is not a valid PDF.' });
+      }
+
+      let parsed: { text: string; numpages: number };
+      try {
+        parsed = await extractPdfText(buffer);
+      } catch {
+        return res.status(422).json({ error: 'The PDF could not be read. It may be encrypted or corrupted.' });
+      }
+
+      const resumeText = (parsed.text || '')
+        .replace(/\r\n/g, '\n')
+        .replace(/[ \t]+\n/g, '\n')
+        .trim();
+
+      if (!resumeText) {
+        return res
+          .status(422)
+          .json({ error: 'No readable text was found in the PDF. Scanned/image-only PDFs are not supported.' });
+      }
+
+      const cappedText =
+        resumeText.length > MAX_RESUME_TEXT_CHARS ? resumeText.slice(0, MAX_RESUME_TEXT_CHARS) : resumeText;
+
+      const updated = db.updateUser(req.user.id, {
+        resumeText: cappedText,
+        resumeFileName: fileName,
+        resumeUpdatedAt: new Date().toISOString(),
+      } as Partial<User>);
+
+      if (!updated) {
+        return res.status(404).json({ error: 'User not found.' });
+      }
+
+      res.json({
+        user: updated,
+        resume: {
+          fileName,
+          characters: cappedText.length,
+          pages: parsed.numpages,
+          updatedAt: updated.resumeUpdatedAt,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to process the resume.' });
+    }
+  });
+
+  // Remove the stored resume (text + metadata).
+  app.delete('/api/auth/resume', requireAuth, (req: AuthenticatedRequest, res) => {
+    try {
+      const existing = db.getUserById(req.user.id);
+      if (!existing) {
+        return res.status(404).json({ error: 'User not found.' });
+      }
+      const cleared = db.clearUserResume(req.user.id);
+      res.json({ user: cleared });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to remove the resume.' });
     }
   });
 

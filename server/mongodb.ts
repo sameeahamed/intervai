@@ -82,6 +82,8 @@ const UserSchema = new Schema<IUserModelData>({
   experienceLevel: { type: String, enum: ['entry', 'mid', 'senior', 'lead'], default: 'mid' },
   skills: [{ type: String }],
   resumeText: { type: String },
+  resumeFileName: { type: String },
+  resumeUpdatedAt: { type: String },
   consentCamera: { type: Boolean, default: true },
   consentMicrophone: { type: Boolean, default: true },
   consentAiEvaluation: { type: Boolean, default: true },

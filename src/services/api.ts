@@ -94,6 +94,25 @@ class ApiService {
     });
   }
 
+  async uploadResume(fileBase64: string, fileName: string): Promise<{
+    user: User;
+    resume: { fileName: string; characters: number; pages: number; updatedAt?: string };
+  }> {
+    return this.request<{
+      user: User;
+      resume: { fileName: string; characters: number; pages: number; updatedAt?: string };
+    }>('/api/auth/resume', {
+      method: 'POST',
+      body: JSON.stringify({ fileBase64, fileName }),
+    });
+  }
+
+  async deleteResume(): Promise<{ user: User }> {
+    return this.request<{ user: User }>('/api/auth/resume', {
+      method: 'DELETE',
+    });
+  }
+
   async forgotPassword(email: string): Promise<{
     message: string;
     devResetToken?: string;

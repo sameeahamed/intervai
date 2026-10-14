@@ -141,6 +141,8 @@ class Database {
             experienceLevel: (u.experienceLevel as any) || 'mid',
             skills: u.skills || [],
             resumeText: u.resumeText,
+            resumeFileName: (u as any).resumeFileName,
+            resumeUpdatedAt: (u as any).resumeUpdatedAt,
             consentCamera: u.consentCamera,
             consentMicrophone: u.consentMicrophone,
             consentAiEvaluation: u.consentAiEvaluation,
@@ -980,6 +982,26 @@ class Database {
     // Asynchronously update in MongoDB
     safeMongoWrite('User update', () =>
       UserModel.updateOne({ _id: id }, { $set: updates }).exec()
+    );
+
+    return updated;
+  }
+
+  // Remove stored resume text and metadata from both memory and MongoDB.
+  public clearUserResume(id: string): User | undefined {
+    const existing = this.users.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing };
+    delete updated.resumeText;
+    delete updated.resumeFileName;
+    delete updated.resumeUpdatedAt;
+    this.users.set(id, updated);
+
+    safeMongoWrite('User resume removal', () =>
+      UserModel.updateOne(
+        { _id: id },
+        { $unset: { resumeText: '', resumeFileName: '', resumeUpdatedAt: '' } }
+      ).exec()
     );
 
     return updated;

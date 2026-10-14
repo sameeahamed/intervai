@@ -30,15 +30,32 @@ function getGenAIClient(): GoogleGenAI | null {
 }
 
 /**
- * Robust GenAI generation with automatic retry, ultra-fast model priority, and rapid timeout protection
+ * Resolve the ordered list of Gemini model IDs to attempt. Configurable via
+ * environment so deployments are not pinned to (or broken by) hardcoded names:
+ *   GEMINI_MODEL            - primary model id (e.g. gemini-2.5-flash)
+ *   GEMINI_MODEL_FALLBACKS  - comma-separated additional fallbacks
+ * When unset we use widely-available stable defaults.
+ */
+const DEFAULT_GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite'];
+function getModelCandidates(): string[] {
+  const primary = (process.env.GEMINI_MODEL || '').trim();
+  const fallbacks = (process.env.GEMINI_MODEL_FALLBACKS || '')
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean);
+  const list = [primary, ...fallbacks].filter(Boolean);
+  return list.length > 0 ? Array.from(new Set(list)) : DEFAULT_GEMINI_MODELS;
+}
+
+/**
+ * Robust GenAI generation with automatic retry, model priority, and timeout protection
  */
 async function generateWithModelFallback(
   ai: GoogleGenAI,
   requestParams: { contents: string; config?: any },
   timeoutMs: number = 4500
 ) {
-  // Model prioritization using official Gemini 3 models per SDK guidelines
-  const fallbackModels = ['gemini-3.7-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+  const fallbackModels = getModelCandidates();
   let lastErr: any = null;
 
   for (let i = 0; i < fallbackModels.length; i++) {
@@ -72,7 +89,7 @@ async function generateWithModelFallback(
         err?.message?.includes('404');
 
       if (isTransient && i < fallbackModels.length - 1) {
-        console.warn(`[Gemini Fast] ${model} transient delay/unavailability, routing to ${fallbackModels[i + 1]}...`);
+        console.warn(`[Gemini] ${model} transient delay/unavailability, routing to ${fallbackModels[i + 1]}...`);
         continue;
       }
     }
@@ -314,17 +331,22 @@ Suggested Ideal Answer: A concise, model exemplar answer demonstrating top-tier 
       const text = response.text?.trim();
       if (text) {
         const parsed = JSON.parse(text);
+        const score = (value: any, fallback: number) => {
+          const n = Number(value);
+          if (!Number.isFinite(n)) return fallback;
+          return Math.min(100, Math.max(0, Math.round(n)));
+        };
         return {
-          technicalAccuracy: Math.min(100, Math.max(10, Number(parsed.technicalAccuracy) || 75)),
-          relevance: Math.min(100, Math.max(10, Number(parsed.relevance) || 75)),
-          completeness: Math.min(100, Math.max(10, Number(parsed.completeness) || 70)),
-          communication: Math.min(100, Math.max(10, Number(parsed.communication) || 80)),
-          reasoning: Math.min(100, Math.max(10, Number(parsed.reasoning) || 75)),
-          overallScore: Math.min(100, Math.max(10, Number(parsed.overallScore) || 75)),
-          strengths: Array.isArray(parsed.strengths) ? parsed.strengths : ['Clear communication of foundational concept'],
+          technicalAccuracy: score(parsed.technicalAccuracy, 60),
+          relevance: score(parsed.relevance, 60),
+          completeness: score(parsed.completeness, 55),
+          communication: score(parsed.communication, 65),
+          reasoning: score(parsed.reasoning, 60),
+          overallScore: score(parsed.overallScore, 60),
+          strengths: Array.isArray(parsed.strengths) ? parsed.strengths : [],
           weaknesses: Array.isArray(parsed.weaknesses) ? parsed.weaknesses : ['Could expand on edge cases and failure modes'],
-          feedback: parsed.feedback || 'Good attempt providing relevant practical insights.',
-          suggestedAnswer: parsed.suggestedAnswer || 'A top tier answer articulates architecture, performance trade-offs, and failure recovery.',
+          feedback: parsed.feedback || 'No detailed feedback was returned.',
+          suggestedAnswer: parsed.suggestedAnswer || 'A strong answer articulates mechanisms, trade-offs, and failure recovery.',
         };
       }
     } catch (err: any) {
@@ -480,7 +502,7 @@ export async function generateSpeechAudio(text: string, voiceName: 'Kore' | 'Puc
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-tts-preview',
+      model: (process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts').trim(),
       contents: [{ parts: [{ text }] }],
       config: {
         responseModalities: ['AUDIO'],
@@ -646,46 +668,114 @@ function generateFallbackQuestion(interview: Interview, orderIndex: number, diff
   };
 }
 
-// Helper: Deterministic evaluation generator
+// Helper: Deterministic evaluation generator (used when the AI is unavailable).
+// IMPORTANT: This must NOT flatter non-answers. Empty, single-word, gibberish,
+// or off-topic responses are scored low and receive no praise.
+const STOPWORDS = new Set([
+  'the','a','an','and','or','but','if','then','so','of','to','in','on','at','by','for','with','about','as',
+  'is','are','was','were','be','been','being','am','do','does','did','doing','have','has','had','having',
+  'i','you','he','she','it','we','they','me','him','her','us','them','my','your','his','their','our','its',
+  'this','that','these','those','there','here','what','which','who','whom','whose','when','where','why','how',
+  'would','could','should','can','will','may','might','must','shall','not','no','yes','very','really','just',
+  'kind','sort','thing','things','stuff','like','also','than','too','well','okay','ok'
+]);
+
+function tokenize(text: string): string[] {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
 function generateFallbackEvaluation(question: Question, transcript: string, role: string): Omit<Evaluation, 'id' | 'answerId' | 'questionId' | 'interviewId'> {
-  const words = transcript.trim().split(/\s+/).filter(Boolean);
+  const raw = String(transcript || '').trim();
+  const words = tokenize(raw);
   const wordCount = words.length;
+  const uniqueWords = new Set(words);
+  const uniqueRatio = wordCount > 0 ? uniqueWords.size / wordCount : 0;
+  const hasVowel = /[aeiou]/i.test(raw);
+  const compact = raw.replace(/\s+/g, '');
+  const mashing = wordCount <= 2 && compact.length <= 4;
+  const lowUniqueness = wordCount >= 6 && uniqueRatio < 0.35;
+  const noMeaningfulWords = words.filter((w) => !STOPWORDS.has(w) && w.length >= 3).length < 2;
 
-  let baseScore = 75;
-  if (wordCount < 15) baseScore = 50;
-  else if (wordCount < 40) baseScore = 68;
-  else if (wordCount < 80) baseScore = 82;
-  else baseScore = 90;
+  // Relevance: overlap between the candidate answer and the question's own
+  // vocabulary + expected points + category. Purely lexical, but enough to
+  // separate an on-topic answer from an unrelated one.
+  const questionTerms = [
+    ...tokenize(question.questionText),
+    ...(question.expectedPoints || []).flatMap((p) => tokenize(p)),
+    ...tokenize(question.category || ''),
+  ].filter((w) => w.length >= 4 && !STOPWORDS.has(w));
+  const questionTermSet = new Set(questionTerms);
+  const answerTermSet = new Set(words);
+  const matchedTerms = [...questionTermSet].filter((t) => answerTermSet.has(t));
+  const relevanceRatio = questionTermSet.size > 0 ? matchedTerms.length / questionTermSet.size : 0;
 
-  // Add bonus for domain terminology
-  const lower = transcript.toLowerCase();
-  const techKeywords = ['architecture', 'performance', 'latency', 'database', 'security', 'scalable', 'cache', 'trade-off', 'async', 'component', 'pipeline', 'optimization', 'metric'];
-  const matchedKeywords = techKeywords.filter(k => lower.includes(k));
-  if (matchedKeywords.length >= 3) baseScore = Math.min(96, baseScore + 6);
+  const notSubstantive = wordCount < 5 || !hasVowel || mashing || lowUniqueness || noMeaningfulWords;
 
-  const techAcc = Math.min(100, Math.max(30, baseScore + Math.floor(Math.random() * 6 - 3)));
-  const rel = Math.min(100, Math.max(30, baseScore + 2));
-  const comp = Math.min(100, Math.max(30, baseScore - 2));
-  const comm = Math.min(100, Math.max(30, baseScore + 4));
-  const reas = Math.min(100, Math.max(30, baseScore));
-  const overall = Math.round((techAcc * 0.35) + (comm * 0.2) + (reas * 0.2) + (rel * 0.15) + (comp * 0.1));
+  if (notSubstantive) {
+    // Non-answer: score very low, and do NOT offer praise.
+    return {
+      technicalAccuracy: 8,
+      relevance: 6,
+      completeness: 5,
+      communication: 15,
+      reasoning: 8,
+      overallScore: 9,
+      strengths: [],
+      weaknesses: [
+        'The response was too short, unclear, or unrelated to the question to assess',
+        'A complete answer should directly address the question with specific detail',
+      ],
+      feedback:
+        'This response does not contain enough substantive, on-topic content to evaluate. Please answer the question directly with at least a few complete sentences.',
+      suggestedAnswer: `A strong answer to "${(question.questionText || '').slice(0, 120)}" states the core approach, explains key trade-offs, and gives a concrete example.`,
+    };
+  }
+
+  // Substantive answer: score by length (with diminishing returns) and topic overlap.
+  const lengthScore = Math.min(100, Math.round((wordCount / 90) * 100));
+  const relevance = Math.round(relevanceRatio * 100);
+  const hasStructure = /\b(first|second|third|finally|because|however|therefore|for example|for instance|in production|specifically|trade-?off|scalab|latency|throughput)\b/i.test(raw);
+
+  const base = Math.round(lengthScore * 0.55 + relevance * 0.45);
+
+  const technicalAccuracy = Math.min(100, Math.max(15, base + (relevance >= 30 ? 8 : -6)));
+  const rel = Math.min(100, Math.max(15, Math.round(relevance * 0.7 + lengthScore * 0.3)));
+  const completeness = Math.min(100, Math.max(15, Math.round(lengthScore * 0.6 + relevance * 0.4)));
+  const communication = Math.min(100, Math.max(20, Math.round(60 + (hasStructure ? 20 : 0) + uniqueRatio * 15)));
+  const reasoning = Math.min(100, Math.max(15, Math.round(lengthScore * 0.5 + relevance * 0.5)));
+  const overall = Math.round(
+    technicalAccuracy * 0.35 + communication * 0.2 + reasoning * 0.2 + rel * 0.15 + completeness * 0.1
+  );
+
+  const strengths: string[] = [];
+  if (rel >= 35) strengths.push(`Addressed relevant aspects of ${question.category}`);
+  if (wordCount >= 60) strengths.push('Provided a reasonably detailed response');
+  if (hasStructure) strengths.push('Used structured, purposeful phrasing');
+  if (strengths.length === 0) strengths.push('Attempted to engage with the question');
+
+  const weaknesses: string[] = [];
+  if (relevanceRatio < 0.35) weaknesses.push('Several key concepts from the question were not addressed');
+  if (wordCount < 45) weaknesses.push('Could expand with concrete examples, trade-offs, and measured outcomes');
+  if (!hasStructure) weaknesses.push('Consider structuring the answer (context → approach → trade-offs → result)');
+  if (weaknesses.length === 0) weaknesses.push('Could add more specific production metrics and edge-case handling');
 
   return {
-    technicalAccuracy: techAcc,
+    technicalAccuracy,
     relevance: rel,
-    completeness: comp,
-    communication: comm,
-    reasoning: reas,
+    completeness,
+    communication,
+    reasoning,
     overallScore: overall,
-    strengths: [
-      `Directly addressed key aspects of ${question.category}`,
-      `Demonstrated familiarity with practical ${role} challenges`,
-      'Maintained coherent verbal structure throughout response'
-    ],
-    weaknesses: [
-      'Could quantify real-world production metrics and edge-case failure modes in greater detail'
-    ],
-    feedback: `Good verbal articulation on ${question.category}. The answer demonstrated sound understanding with clear flow.`,
-    suggestedAnswer: `A top-tier answer addresses core mechanisms, discusses concrete scalability and failure recovery considerations, and incorporates measurable production benchmarks.`
+    strengths,
+    weaknesses,
+    feedback:
+      relevanceRatio < 0.35
+        ? `Your answer touched on ${question.category} but did not fully address what was asked. Focus on the specific question and cover the key points directly.`
+        : `You addressed the question on ${question.category} with a ${wordCount >= 60 ? 'detailed' : 'brief'} response. Add concrete examples and trade-offs to strengthen it.`,
+    suggestedAnswer: 'A strong answer states the core mechanism, explains the key trade-offs, and supports it with a concrete, measurable example.',
   };
 }

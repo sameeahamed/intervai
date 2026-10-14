@@ -72,8 +72,11 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
   // Hardware & Controls
   const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [isCameraOn, setIsCameraOn] = useState<boolean>(true);
+  const [isCameraOn, setIsCameraOn] = useState<boolean>(false);
   const [isMicOn, setIsMicOn] = useState<boolean>(true);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraStatus, setCameraStatus] = useState<'off' | 'requesting' | 'live' | 'error'>('off');
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [volume, setVolume] = useState<number>(1.0);
   const [frequencyData, setFrequencyData] = useState<Uint8Array | null>(null);
   const [visualState, setVisualState] = useState<VisualAnalysisState | null>(null);
@@ -84,6 +87,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   const voiceServiceRef = useRef<VoiceService | null>(null);
   const visionServiceRef = useRef<VisionService | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const videoStreamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number | null>(null);
@@ -188,8 +192,39 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     if (voiceServiceRef.current) voiceServiceRef.current.cleanup();
     if (visionServiceRef.current) visionServiceRef.current.stopAnalysis();
-    if (micStreamRef.current) micStreamRef.current.getTracks().forEach((t) => t.stop());
-    if (videoStreamRef.current) videoStreamRef.current.getTracks().forEach((t) => t.stop());
+    stopStream(micStreamRef.current);
+    stopStream(videoStreamRef.current);
+    micStreamRef.current = null;
+    videoStreamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraStream(null);
+  };
+
+  const stopStream = (stream: MediaStream | null) => {
+    stream?.getTracks().forEach((t) => {
+      try {
+        t.stop();
+      } catch {
+        /* noop */
+      }
+    });
+  };
+
+  const humanizeCameraError = (err: any): string => {
+    const name = err?.name || '';
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      return 'Camera permission was denied. Allow camera access for this site in your browser settings, then retry.';
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return 'No camera device was found. Connect a camera and retry.';
+    }
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+      return 'The camera is already in use by another app or tab. Close it and retry.';
+    }
+    if (name === 'OverconstrainedError') {
+      return 'The selected camera does not support the requested settings. Try another camera.';
+    }
+    return 'Could not start the camera. Check permissions and retry.';
   };
 
   // 2. HARDWARE ACCESS & STREAMS
@@ -215,28 +250,125 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
       setIsMicOn(false);
     }
 
-    // Camera stream
-    try {
-      const videoStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 480, height: 360 },
-      });
-      videoStreamRef.current = videoStream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = videoStream;
-        videoRef.current.play();
-      }
-      setIsCameraOn(true);
+    // Camera stream (deferred to enableCamera so it can be retried/toggled)
+    await enableCamera();
+  };
 
-      if (visionServiceRef.current && videoRef.current) {
-        visionServiceRef.current.bindVideo(videoRef.current, (state) => {
-          setVisualState(state);
-        });
-        visionServiceRef.current.startAnalysis(1000);
-      }
-    } catch {
+  /**
+   * Acquire (or re-acquire) the camera stream. The stream is stored in React
+   * state and attached to the <video> element by an effect, so mounting order
+   * and ordinary re-renders can never leave the preview black.
+   */
+  const enableCamera = async (deviceId?: string) => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setCameraStatus('error');
+      setCameraError(
+        'Camera access is unavailable. A secure context (https:// or http://localhost) and a supported browser are required.'
+      );
       setIsCameraOn(false);
+      return;
+    }
+
+    setCameraStatus('requesting');
+    setCameraError(null);
+    // Release any previous stream first to avoid "device in use" errors.
+    stopStream(videoStreamRef.current);
+    videoStreamRef.current = null;
+
+    try {
+      const videoConstraints: MediaTrackConstraints = deviceId
+        ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
+        : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } };
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+        audio: false,
+      });
+
+      videoStreamRef.current = stream;
+      setCameraStream(stream);
+      setIsCameraOn(true);
+      setCameraStatus('live');
+    } catch (err: any) {
+      stopStream(videoStreamRef.current);
+      videoStreamRef.current = null;
+      setCameraStream(null);
+      setIsCameraOn(false);
+      setCameraStatus('error');
+      setCameraError(humanizeCameraError(err));
     }
   };
+
+  const disableCamera = () => {
+    if (visionServiceRef.current) visionServiceRef.current.stopAnalysis();
+    stopStream(videoStreamRef.current);
+    videoStreamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraStream(null);
+    setIsCameraOn(false);
+    setCameraStatus('off');
+    setCameraError(null);
+  };
+
+  const handleToggleCamera = () => {
+    if (isCameraOn && cameraStatus === 'live') {
+      disableCamera();
+    } else {
+      enableCamera();
+    }
+  };
+
+  // Attach the active MediaStream to the <video> element whenever the stream
+  // changes OR the element (re)mounts (e.g. when the session view appears).
+  // This is the fix for the black preview: the old code tried to set srcObject
+  // before the video element existed, so the stream was never rendered.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !cameraStream) return;
+
+    if (video.srcObject !== cameraStream) {
+      video.srcObject = cameraStream;
+    }
+    const playPromise = video.play?.();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {
+        /* Autoplay can be blocked until a user gesture; the element stays paused but attached. */
+      });
+    }
+
+    // Bind the (privacy-preserving, local-only) framing analysis once video is ready.
+    if (visionServiceRef.current) {
+      visionServiceRef.current.bindVideo(video, (state) => setVisualState(state));
+      visionServiceRef.current.startAnalysis(1000);
+    }
+
+    const [track] = cameraStream.getVideoTracks();
+    const handleTrackEnded = () => {
+      setCameraStatus('off');
+      setIsCameraOn(false);
+    };
+    track?.addEventListener?.('ended', handleTrackEnded);
+
+    return () => {
+      track?.removeEventListener?.('ended', handleTrackEnded);
+    };
+  }, [cameraStream, hasStartedSession]);
+
+  // Mirror the same camera stream into the pre-session device-check preview.
+  // A MediaStream may be attached to more than one <video> element.
+  useEffect(() => {
+    const el = previewVideoRef.current;
+    if (!el) return;
+    el.srcObject = cameraStream;
+    if (cameraStream) {
+      el.play().catch(() => {
+        /* autoplay may be blocked; silent */
+      });
+    }
+    return () => {
+      if (el) el.srcObject = null;
+    };
+  }, [cameraStream, hasStartedSession]);
 
   // 3. QUESTION ORCHESTRATION & REALISTIC AI VOICE SPEAKING
   // Presents a specific (already-resolved) question to the candidate, whether it
@@ -605,6 +737,95 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
               <p className="text-zinc-400 pl-5">• When finished speaking, review your answer and click <strong>Submit Response</strong> for instant feedback.</p>
             </div>
 
+            {/* Pre-interview device check */}
+            <div className="p-4 bg-[#18181c] rounded-2xl border border-[#27272a] text-left">
+              <div className="font-bold text-white flex items-center gap-1.5 text-xs mb-3">
+                <CheckCircle2 className="w-4 h-4 text-blue-400" />
+                <span>Device check</span>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                {/* Camera preview */}
+                <div className="relative w-full sm:w-44 h-28 rounded-xl overflow-hidden bg-[#0a0a0b] border border-[#27272a] shrink-0 flex items-center justify-center">
+                  <video
+                    ref={previewVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    aria-label="Camera preview"
+                    className={`w-full h-full object-cover -scale-x-100 ${
+                      cameraStatus === 'live' ? 'opacity-100' : 'opacity-0'
+                    }`}
+                  />
+                  {cameraStatus !== 'live' && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-3 text-center">
+                      {cameraStatus === 'requesting' ? (
+                        <>
+                          <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+                          <span className="text-[10px] text-zinc-400">Starting…</span>
+                        </>
+                      ) : (
+                        <>
+                          <VideoOff className="w-5 h-5 text-zinc-400" />
+                          <span className="text-[10px] text-zinc-400">
+                            {cameraStatus === 'error' ? 'Camera unavailable' : 'Camera off'}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Status list */}
+                <div className="flex-1 space-y-2 text-[11px]">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        cameraStatus === 'live' ? 'bg-emerald-400' : cameraStatus === 'requesting' ? 'bg-amber-400' : 'bg-zinc-500'
+                      }`}
+                    />
+                    <span className="text-zinc-300">
+                      Camera:{' '}
+                      {cameraStatus === 'live'
+                        ? 'Ready'
+                        : cameraStatus === 'requesting'
+                        ? 'Starting…'
+                        : cameraStatus === 'error'
+                        ? 'Unavailable'
+                        : 'Off (optional)'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${isMicOn ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                    <span className="text-zinc-300">Microphone: {isMicOn ? 'Ready' : 'Unavailable'}</span>
+                  </div>
+                  {cameraError && <p className="text-amber-300/90 leading-snug">{cameraError}</p>}
+                  {!isMicOn && (
+                    <p className="text-amber-300/90 leading-snug">
+                      No microphone detected. You can still type your answers on-screen.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      onClick={() => enableCamera()}
+                      className="px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#202026] border border-[#27272a] text-zinc-200 hover:bg-[#28282e] transition flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      {cameraStatus === 'live' ? 'Refresh camera' : 'Enable camera'}
+                    </button>
+                    <button
+                      onClick={handleToggleMic}
+                      className="px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#202026] border border-[#27272a] text-zinc-200 hover:bg-[#28282e] transition"
+                    >
+                      {isMicOn ? 'Disable mic' : 'Enable mic'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[10px] text-zinc-500 mt-2">
+                Camera is optional and stays in your browser only. Audio answers are transcribed to evaluate your response.
+              </p>
+            </div>
+
             {/* Prominent Start Button */}
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
               <button
@@ -722,51 +943,92 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
         {/* Right Column: Candidate Video Feed & Live Transcript Input (5 cols) */}
         <div className="lg:col-span-5 space-y-6">
-          {/* Candidate Camera View with Responsible Engagement Overlay */}
+          {/* Candidate Camera View */}
           <div className="relative bg-[#121215] border border-[#27272a] rounded-3xl overflow-hidden shadow-lg flex flex-col justify-between min-h-[220px]">
-            <div className="relative w-full h-48 sm:h-56 bg-[#0a0a0b] overflow-hidden flex items-center justify-center">
+            <div className="relative w-full h-48 sm:h-64 bg-[#0a0a0b] overflow-hidden flex items-center justify-center">
               <video
                 ref={videoRef}
                 autoPlay
                 playsInline
                 muted
-                className="w-full h-full object-cover -scale-x-100"
+                aria-label="Your live camera preview"
+                className={`w-full h-full object-cover -scale-x-100 transition-opacity duration-300 ${
+                  cameraStatus === 'live' ? 'opacity-100' : 'opacity-0'
+                }`}
               />
 
-              {/* Responsible Visual Engagement Indicators (HUD) */}
-              <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[10px] font-semibold text-white/90 drop-shadow-md pointer-events-none">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-sm border border-white/10">
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      visualState?.isCentered ? 'bg-emerald-400' : 'bg-amber-400'
-                    }`}
-                  />
-                  <span>{visualState?.isCentered ? 'Framed & Centered' : 'Align Centered'}</span>
+              {/* Live camera indicator (only when the stream is actually rendering) */}
+              {cameraStatus === 'live' && (
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-sm text-[10px] font-semibold text-white/90 pointer-events-none">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Camera Live
                 </div>
+              )}
 
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-sm border border-white/10">
-                  <span>Light: {visualState?.lightingQuality || 'Good'}</span>
-                  <span>•</span>
-                  <span>Cam: {visualState?.stability || 'Stable'}</span>
+              {/* Privacy-preserving framing HUD + centre guide (only while live) */}
+              {cameraStatus === 'live' && (
+                <>
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-sm text-[10px] font-semibold text-white/90 pointer-events-none">
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        visualState?.isCentered ? 'bg-emerald-400' : 'bg-amber-400'
+                      }`}
+                    />
+                    <span>{visualState?.isCentered ? 'Framed & Centered' : 'Adjust framing'}</span>
+                  </div>
+
+                  <div className="absolute inset-x-1/4 inset-y-8 border-2 border-dashed border-white/20 rounded-2xl pointer-events-none" />
+
+                  <div className="absolute bottom-2 inset-x-3 text-center pointer-events-none">
+                    <span className="px-2 py-0.5 bg-black/80 backdrop-blur-sm text-[9px] text-zinc-300 rounded-md border border-white/10">
+                      Camera framing is analysed locally in your browser only • not recorded or uploaded
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {/* Fallback / permission state */}
+              {cameraStatus !== 'live' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center bg-[#0a0a0b]">
+                  {cameraStatus === 'requesting' ? (
+                    <>
+                      <Loader2 className="w-7 h-7 text-blue-400 animate-spin" />
+                      <p className="text-xs text-zinc-300 font-medium">Starting camera…</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-12 h-12 rounded-2xl bg-[#18181c] border border-[#27272a] flex items-center justify-center">
+                        <VideoOff className="w-6 h-6 text-zinc-400" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold text-zinc-200">
+                          {cameraStatus === 'error' ? 'Camera unavailable' : 'Camera is off'}
+                        </p>
+                        <p className="text-[11px] text-zinc-400 max-w-[260px]">
+                          {cameraError ||
+                            'You can continue with audio only. Your camera is never recorded or uploaded.'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => enableCamera()}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition flex items-center gap-1.5"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Retry Camera
+                      </button>
+                    </>
+                  )}
                 </div>
-              </div>
-
-              {/* Center Framing Guide Box */}
-              <div className="absolute inset-x-1/4 inset-y-8 border-2 border-dashed border-white/20 rounded-2xl pointer-events-none" />
-
-              {/* Ethics Label at bottom of video */}
-              <div className="absolute bottom-2 inset-x-3 text-center pointer-events-none">
-                <span className="px-2 py-0.5 bg-black/80 backdrop-blur-sm text-[9px] text-zinc-300 rounded-md border border-white/10">
-                  🔒 Local Practice Telemetry Only • No Face Recognition
-                </span>
-              </div>
+              )}
             </div>
 
             {/* Video & Mic Toggle Bar */}
             <div className="p-3 bg-[#18181c] flex items-center justify-between border-t border-[#27272a] text-xs text-zinc-300">
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setIsMicOn(!isMicOn)}
+                  onClick={handleToggleMic}
+                  aria-label={isMicOn ? 'Mute microphone' : 'Unmute microphone'}
+                  aria-pressed={!isMicOn}
                   className={`p-2 rounded-xl border transition ${
                     isMicOn
                       ? 'bg-[#202026] text-zinc-200 border-[#27272a]'
@@ -778,21 +1040,27 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
                 </button>
 
                 <button
-                  onClick={() => setIsCameraOn(!isCameraOn)}
+                  onClick={handleToggleCamera}
+                  aria-label={isCameraOn && cameraStatus === 'live' ? 'Turn camera off' : 'Turn camera on'}
+                  aria-pressed={!(isCameraOn && cameraStatus === 'live')}
                   className={`p-2 rounded-xl border transition ${
-                    isCameraOn
+                    isCameraOn && cameraStatus === 'live'
                       ? 'bg-[#202026] text-zinc-200 border-[#27272a]'
                       : 'bg-[#202026]/50 text-zinc-500 border-[#27272a]'
                   }`}
-                  title={isCameraOn ? 'Turn Camera Off' : 'Turn Camera On'}
+                  title={isCameraOn && cameraStatus === 'live' ? 'Turn Camera Off' : 'Turn Camera On'}
                 >
-                  {isCameraOn ? <Video className="w-4 h-4 text-blue-400" /> : <VideoOff className="w-4 h-4" />}
+                  {isCameraOn && cameraStatus === 'live' ? (
+                    <Video className="w-4 h-4 text-blue-400" />
+                  ) : (
+                    <VideoOff className="w-4 h-4" />
+                  )}
                 </button>
               </div>
 
               <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-medium">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Encrypted Audio Channel</span>
+                <span>{isMicOn ? 'Mic on • processed locally in browser' : 'Mic muted'}</span>
               </div>
             </div>
           </div>

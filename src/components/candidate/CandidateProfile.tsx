@@ -15,11 +15,15 @@ import {
   Save,
   ArrowLeft,
   Lock,
-  Sparkles
+  Sparkles,
+  Upload,
+  FileText,
+  X,
+  Loader2
 } from 'lucide-react';
 
 export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) => {
-  const { user, updateUser, logout } = useAuth();
+  const { user, updateUser, logout, refreshUser } = useAuth();
   const [name, setName] = useState(user?.name || '');
   const [targetRole, setTargetRole] = useState(user?.targetRole || 'Full-Stack Developer');
   const [experienceLevel, setExperienceLevel] = useState(user?.experienceLevel || 'mid');
@@ -28,10 +32,79 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
   const [newSkill, setNewSkill] = useState('');
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [resumeFileName, setResumeFileName] = useState<string>(user?.resumeFileName || '');
+  const [resumeUploading, setResumeUploading] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [purgeLoading, setPurgeLoading] = useState(false);
 
+  const resumeInputRef = React.useRef<HTMLInputElement | null>(null);
+
   const purgeDialogRef = useDialogA11y(showPurgeModal, () => setShowPurgeModal(false));
+
+  const readFileAsBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || '');
+        const comma = result.indexOf(',');
+        resolve(comma !== -1 ? result.slice(comma + 1) : result);
+      };
+      reader.onerror = () => reject(new Error('Could not read the selected file.'));
+      reader.readAsDataURL(file);
+    });
+
+  const handleResumeFile = async (file: File | undefined) => {
+    if (!file) return;
+    setResumeError(null);
+    setResumeNotice(null);
+
+    if (!/\.pdf$/i.test(file.name)) {
+      setResumeError('Please choose a PDF file.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setResumeError('Resume is too large. Maximum size is 5 MB.');
+      return;
+    }
+
+    setResumeUploading(true);
+    try {
+      const base64 = await readFileAsBase64(file);
+      const res = await api.uploadResume(base64, file.name);
+      setResumeText(res.user.resumeText || '');
+      setResumeFileName(res.resume.fileName);
+      setResumeNotice(
+        `Extracted ${res.resume.characters.toLocaleString()} characters from ${res.resume.pages} page${
+          res.resume.pages === 1 ? '' : 's'
+        }.`
+      );
+      await refreshUser();
+    } catch (err: any) {
+      setResumeError(err?.message || 'Failed to upload the resume.');
+    } finally {
+      setResumeUploading(false);
+      if (resumeInputRef.current) resumeInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveResume = async () => {
+    setResumeError(null);
+    setResumeNotice(null);
+    setResumeUploading(true);
+    try {
+      await api.deleteResume();
+      setResumeText('');
+      setResumeFileName('');
+      setResumeNotice('Resume removed.');
+      await refreshUser();
+    } catch (err: any) {
+      setResumeError(err?.message || 'Failed to remove the resume.');
+    } finally {
+      setResumeUploading(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,11 +274,72 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
           <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
             Resume / Experience Summary (Optional)
           </label>
+
+          {/* PDF upload */}
+          <div className="mb-3 p-3.5 bg-[#18181c] border border-[#27272a] rounded-xl">
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                ref={resumeInputRef}
+                id="input-resume-pdf"
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                onChange={(e) => handleResumeFile(e.target.files?.[0])}
+              />
+              <button
+                type="button"
+                onClick={() => resumeInputRef.current?.click()}
+                disabled={resumeUploading}
+                className="px-3.5 py-2 text-xs font-bold rounded-xl bg-[#202026] border border-[#27272a] text-zinc-100 hover:bg-[#28282e] transition flex items-center gap-1.5 disabled:opacity-60"
+              >
+                {resumeUploading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Upload className="w-3.5 h-3.5" />
+                )}
+                {resumeUploading ? 'Processing…' : 'Upload PDF resume'}
+              </button>
+
+              {resumeFileName && (
+                <span className="flex items-center gap-1.5 text-[11px] text-zinc-300 bg-[#0a0a0b] border border-[#27272a] px-2.5 py-1.5 rounded-lg">
+                  <FileText className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="max-w-[180px] truncate">{resumeFileName}</span>
+                  <button
+                    type="button"
+                    onClick={handleRemoveResume}
+                    aria-label="Remove resume"
+                    className="text-zinc-500 hover:text-red-400 transition"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              )}
+            </div>
+
+            <p className="text-[11px] text-zinc-500 mt-2">
+              PDF only, up to 5&nbsp;MB. Text is extracted in the browser→server pipeline; the original file is never
+              stored.
+            </p>
+
+            {resumeError && (
+              <p className="text-[11px] text-red-400 mt-1.5 flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                {resumeError}
+              </p>
+            )}
+            {resumeNotice && !resumeError && (
+              <p className="text-[11px] text-emerald-400 mt-1.5 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                {resumeNotice}
+              </p>
+            )}
+          </div>
+
           <textarea
             value={resumeText}
             onChange={(e) => setResumeText(e.target.value)}
             rows={6}
-            maxLength={8000}
+            maxLength={20000}
             placeholder="Paste your resume or a summary of your experience. Used only to personalize your interview questions."
             className="w-full px-3.5 py-2.5 text-sm bg-[#18181c] border border-[#27272a] rounded-xl text-white resize-y"
           />
@@ -214,7 +348,7 @@ export const CandidateProfile: React.FC<{ onBack: () => void }> = ({ onBack }) =
               Stored with your profile. Do not include sensitive personal data you don't want sent to the AI provider.
             </p>
             <span className="text-[11px] text-zinc-500 shrink-0 ml-2">
-              {resumeText.length}/8000
+              {resumeText.length}/20000
             </span>
           </div>
         </div>

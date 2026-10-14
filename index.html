@@ -4,14 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IntervAI - Adaptive AI Voice Interview Assessment Platform</title>
-    <meta name="description" content="Production-ready conversational AI interview assessment platform with real-time voice, adaptive questioning, and multi-dimensional scoring." />
+    <meta name="description" content="Conversational AI interview assessment platform with real-time voice, adaptive questioning, resume personalization, and multi-dimensional scoring." />
+    <script>
+      // Apply the persisted theme before first paint to avoid a flash of the wrong theme.
+      (function () {
+        try {
+          var t = localStorage.getItem('intervai-theme');
+          if (t === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.colorScheme = 'dark';
+          } else {
+            document.documentElement.style.colorScheme = 'light';
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   </head>
-  <body class="bg-[#0a0a0b] text-[#e5e7eb] font-['Plus_Jakarta_Sans',sans-serif] antialiased selection:bg-blue-600 selection:text-white min-h-screen">
+  <body class="font-['Plus_Jakarta_Sans',sans-serif] antialiased min-h-screen">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

@@ -25,6 +25,8 @@ export interface User {
   experienceLevel?: ExperienceLevel;
   skills?: string[];
   resumeText?: string;
+  resumeFileName?: string;
+  resumeUpdatedAt?: string;
   consentCamera?: boolean;
   consentMicrophone?: boolean;
   consentAiEvaluation?: boolean;

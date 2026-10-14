@@ -4,6 +4,7 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
+import { useTheme } from '../../context/ThemeContext.tsx';
 import {
   Sparkles,
   LayoutDashboard,
@@ -17,7 +18,9 @@ import {
   ShieldCheck,
   Database,
   Menu,
-  X
+  X,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -36,6 +39,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenDatabaseModal,
 }) => {
   const { user, isAuthenticated, isAdmin, logout, quickDemoLogin } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
@@ -148,6 +152,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             </button>
           )}
+
+          {/* Theme Toggle */}
+          <button
+            id="btn-theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            className="p-2 text-zinc-400 hover:text-zinc-100 rounded-xl hover:bg-[#18181c] transition"
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
 
           {/* Privacy Modal Button */}
           <button

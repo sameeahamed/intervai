@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../../services/api.ts';
+import { useAuth } from '../../context/AuthContext.tsx';
 import { VoiceService } from '../../services/voice.ts';
 import { extractSkillsFromText } from '../../utils/personalization.ts';
 import {
@@ -20,7 +21,8 @@ import {
   Clock,
   HelpCircle,
   X,
-  Plus
+  Plus,
+  FileText
 } from 'lucide-react';
 
 interface InterviewSetupProps {
@@ -64,6 +66,7 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
   onCancel,
   onOpenPrivacy,
 }) => {
+  const { user } = useAuth();
   const [step, setStep] = useState<number>(1);
 
   // Form State
@@ -513,6 +516,30 @@ export const InterviewSetup: React.FC<InterviewSetupProps> = ({
                   Treated as untrusted input; not used as instructions. Do not paste sensitive personal data.
                 </p>
                 <span className="text-[10px] text-zinc-500 shrink-0 ml-2">{jobDescription.length}/8000</span>
+              </div>
+            </div>
+
+            {/* Resume personalization status */}
+            <div className="p-3.5 rounded-xl border border-[#27272a] bg-[#18181c] flex items-start gap-2.5">
+              <FileText className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+              <div className="text-[11px] leading-relaxed">
+                {user?.resumeText ? (
+                  <p className="text-zinc-300">
+                    A resume is on file
+                    {user.resumeFileName ? (
+                      <>
+                        {' '}
+                        (<span className="text-zinc-100 font-medium">{user.resumeFileName}</span>)
+                      </>
+                    ) : null}
+                    . Questions will be personalised to it. Manage or remove it in your profile.
+                  </p>
+                ) : (
+                  <p className="text-zinc-400">
+                    No resume on file. Upload a PDF resume in your profile to personalise question topics to your
+                    experience.
+                  </p>
+                )}
               </div>
             </div>
 

@@ -23,6 +23,8 @@ import {
   Video,
   VideoOff,
   Volume2,
+  VolumeX,
+  PhoneOff,
   Send,
   Sparkles,
   Clock,
@@ -30,7 +32,6 @@ import {
   AlertTriangle,
   FileText,
   HelpCircle,
-  ShieldCheck,
   ChevronRight,
   Loader2,
   RotateCcw,
@@ -38,6 +39,46 @@ import {
   MessageSquareQuote,
   UserCheck
 } from 'lucide-react';
+
+interface ControlButtonProps {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  title: string;
+  onClick: () => void;
+  tone?: 'on' | 'off' | 'neutral';
+  loading?: boolean;
+  ariaPressed?: boolean;
+}
+
+const ControlButton: React.FC<ControlButtonProps> = ({
+  icon: Icon,
+  label,
+  title,
+  onClick,
+  tone = 'neutral',
+  loading = false,
+  ariaPressed,
+}) => {
+  const toneClasses: Record<'on' | 'off' | 'neutral', string> = {
+    on: 'bg-blue-600/15 text-blue-300 border-blue-600/40 hover:bg-blue-600/25',
+    off: 'bg-red-950/60 text-red-300 border-red-800/70 hover:bg-red-900/70',
+    neutral: 'bg-[#18181c] text-zinc-300 border-[#27272a] hover:bg-[#222228]',
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      aria-pressed={ariaPressed}
+      className={`flex flex-col items-center justify-center gap-1 min-w-[54px] sm:min-w-[66px] px-2.5 py-2 rounded-xl border text-[10px] font-semibold transition active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121215] ${toneClasses[tone]}`}
+    >
+      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}
+      <span className="leading-none">{label}</span>
+    </button>
+  );
+};
 
 interface InterviewRoomProps {
   interviewId: string;
@@ -81,6 +122,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   const [frequencyData, setFrequencyData] = useState<Uint8Array | null>(null);
   const [visualState, setVisualState] = useState<VisualAnalysisState | null>(null);
   const [showExitDialog, setShowExitDialog] = useState<boolean>(false);
+  const [showFinishDialog, setShowFinishDialog] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Service Refs
@@ -96,6 +138,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   // Exit confirmation is dismissable (Escape / backdrop); the feedback and
   // practice dialogs intentionally require an explicit action.
   const exitDialogRef = useDialogA11y(showExitDialog, () => setShowExitDialog(false));
+  const finishDialogRef = useDialogA11y(showFinishDialog, () => setShowFinishDialog(false));
 
   // 1. INITIALIZE INTERVIEW SESSION & SERVICES
   useEffect(() => {
@@ -456,6 +499,15 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     }
   };
 
+  // Toggle AI interviewer voice output (speaker control)
+  const handleToggleVoiceMute = () => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    if (voiceServiceRef.current) {
+      voiceServiceRef.current.setVolume(nextMuted ? 0 : volume);
+    }
+  };
+
   // Candidate Barge-in / Immediate Speak
   const handleStartSpeakingNow = () => {
     if (voiceServiceRef.current) {
@@ -599,6 +651,12 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     }
   };
 
+  // Confirmed finish flow launched from the control bar
+  const handleConfirmFinish = async () => {
+    setShowFinishDialog(false);
+    await handleFinishInterview();
+  };
+
   const formatTimer = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -652,11 +710,11 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         <div className="flex items-center gap-2">
           <button
             id="btn-finish-early"
-            onClick={handleFinishInterview}
+            onClick={() => setShowFinishDialog(true)}
             className="px-3.5 py-1.5 text-xs font-semibold bg-blue-950/80 hover:bg-blue-900/80 text-blue-300 border border-blue-800/60 rounded-xl transition flex items-center gap-1.5"
           >
-            <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
-            {isPractice ? 'Finish Practice' : 'Finish & Generate Report'}
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Finish & Report
           </button>
           <button
             onClick={() => setShowExitDialog(true)}
@@ -858,9 +916,10 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
           </div>
         </div>
       ) : (
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: AI Voice Interviewer & Conversational Question Display (7 cols) */}
-        <div className="lg:col-span-7 space-y-6">
+      <>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-stretch">
+        {/* AI interviewer panel (right on desktop, second on mobile) */}
+        <div className="lg:col-span-4 order-2 space-y-6">
           {/* AI Voice Avatar Box */}
           <VoiceAvatar
             voiceState={voiceState}
@@ -870,12 +929,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
             isMuted={isMuted}
             volume={volume}
             onRepeatQuestion={handleRepeatQuestion}
-            onToggleMute={() => {
-              setIsMuted(!isMuted);
-              if (voiceServiceRef.current) {
-                voiceServiceRef.current.setVolume(!isMuted ? 0 : 1);
-              }
-            }}
+            onToggleMute={handleToggleVoiceMute}
             onVolumeChange={(val) => {
               setVolume(val);
               if (voiceServiceRef.current) {
@@ -941,11 +995,11 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Candidate Video Feed & Live Transcript Input (5 cols) */}
-        <div className="lg:col-span-5 space-y-6">
-          {/* Candidate Camera View */}
-          <div className="relative bg-[#121215] border border-[#27272a] rounded-3xl overflow-hidden shadow-lg flex flex-col justify-between min-h-[220px]">
-            <div className="relative w-full h-48 sm:h-64 bg-[#0a0a0b] overflow-hidden flex items-center justify-center">
+        {/* Candidate camera + transcript column (left on desktop, first on mobile) */}
+        <div className="lg:col-span-8 order-1 space-y-6">
+          {/* Candidate Camera View — primary focus */}
+          <div className="relative bg-[#121215] border border-[#27272a] rounded-3xl overflow-hidden shadow-lg flex flex-col justify-between">
+            <div className="relative w-full h-[300px] sm:h-[420px] bg-[#0a0a0b] overflow-hidden flex items-center justify-center">
               <video
                 ref={videoRef}
                 autoPlay
@@ -1021,48 +1075,6 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
                 </div>
               )}
             </div>
-
-            {/* Video & Mic Toggle Bar */}
-            <div className="p-3 bg-[#18181c] flex items-center justify-between border-t border-[#27272a] text-xs text-zinc-300">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleToggleMic}
-                  aria-label={isMicOn ? 'Mute microphone' : 'Unmute microphone'}
-                  aria-pressed={!isMicOn}
-                  className={`p-2 rounded-xl border transition ${
-                    isMicOn
-                      ? 'bg-[#202026] text-zinc-200 border-[#27272a]'
-                      : 'bg-red-950/80 text-red-300 border-red-800'
-                  }`}
-                  title={isMicOn ? 'Mute Microphone' : 'Enable Microphone'}
-                >
-                  {isMicOn ? <Mic className="w-4 h-4 text-emerald-400" /> : <MicOff className="w-4 h-4" />}
-                </button>
-
-                <button
-                  onClick={handleToggleCamera}
-                  aria-label={isCameraOn && cameraStatus === 'live' ? 'Turn camera off' : 'Turn camera on'}
-                  aria-pressed={!(isCameraOn && cameraStatus === 'live')}
-                  className={`p-2 rounded-xl border transition ${
-                    isCameraOn && cameraStatus === 'live'
-                      ? 'bg-[#202026] text-zinc-200 border-[#27272a]'
-                      : 'bg-[#202026]/50 text-zinc-500 border-[#27272a]'
-                  }`}
-                  title={isCameraOn && cameraStatus === 'live' ? 'Turn Camera Off' : 'Turn Camera On'}
-                >
-                  {isCameraOn && cameraStatus === 'live' ? (
-                    <Video className="w-4 h-4 text-blue-400" />
-                  ) : (
-                    <VideoOff className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-
-              <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-medium">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{isMicOn ? 'Mic on • processed locally in browser' : 'Mic muted'}</span>
-              </div>
-            </div>
           </div>
 
           {/* Real-time Spoken Answer Transcript & Text Editor */}
@@ -1132,6 +1144,71 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Floating bottom control bar */}
+      <div className="sticky bottom-4 z-30 flex justify-center pt-1">
+        <div className="flex items-center gap-1.5 sm:gap-2 p-2 sm:p-2.5 bg-[#121215]/95 backdrop-blur-md border border-[#27272a] rounded-2xl shadow-2xl">
+          <ControlButton
+            icon={isMicOn ? Mic : MicOff}
+            label={isMicOn ? 'Mic' : 'Muted'}
+            title={isMicOn ? 'Mute microphone' : 'Unmute microphone'}
+            tone={isMicOn ? 'on' : 'off'}
+            onClick={handleToggleMic}
+            ariaPressed={!isMicOn}
+          />
+          <ControlButton
+            icon={cameraStatus === 'live' ? Video : VideoOff}
+            label={cameraStatus === 'requesting' ? 'Starting' : 'Camera'}
+            title={cameraStatus === 'live' ? 'Turn camera off' : 'Turn camera on'}
+            tone={cameraStatus === 'live' ? 'on' : 'off'}
+            loading={cameraStatus === 'requesting'}
+            onClick={handleToggleCamera}
+            ariaPressed={cameraStatus !== 'live'}
+          />
+          <ControlButton
+            icon={isMuted ? VolumeX : Volume2}
+            label={isMuted ? 'Muted' : 'Speaker'}
+            title={isMuted ? 'Unmute AI interviewer voice' : 'Mute AI interviewer voice'}
+            tone={isMuted ? 'off' : 'neutral'}
+            onClick={handleToggleVoiceMute}
+            ariaPressed={isMuted}
+          />
+
+          <div className="hidden sm:flex items-center px-1.5">
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              value={volume}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                setVolume(val);
+                if (voiceServiceRef.current) {
+                  voiceServiceRef.current.setVolume(val);
+                }
+              }}
+              aria-label="AI interviewer voice volume"
+              title="AI interviewer voice volume"
+              className="w-16 h-1.5 bg-[#27272a] rounded-lg appearance-none cursor-pointer accent-blue-500"
+            />
+          </div>
+
+          <div className="w-px h-8 bg-[#27272a] mx-0.5" />
+
+          <button
+            type="button"
+            onClick={() => setShowFinishDialog(true)}
+            title="End interview and generate report"
+            aria-label="End interview and generate report"
+            className="flex flex-col items-center justify-center gap-1 min-w-[54px] sm:min-w-[66px] px-2.5 py-2 rounded-xl border border-red-800/70 bg-red-950/60 text-red-300 text-[10px] font-semibold transition hover:bg-red-900/70 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121215]"
+          >
+            <PhoneOff className="w-4 h-4" />
+            <span>End</span>
+          </button>
+        </div>
+      </div>
+      </>
       )}
 
       {/* 3. IMMEDIATE EVALUATION DRAWER / MODAL */}
@@ -1335,6 +1412,48 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
                 className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-500 text-white rounded-xl transition shadow-md"
               >
                 Exit Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. END INTERVIEW CONFIRMATION DIALOG */}
+      {showFinishDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+          onClick={() => setShowFinishDialog(false)}
+        >
+          <div
+            ref={finishDialogRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="finish-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#121215] border border-[#27272a] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-scale-in focus:outline-none"
+          >
+            <h3 id="finish-modal-title" className="text-base font-bold text-white">
+              {isPractice ? 'End Practice Session?' : 'End Interview & Generate Report?'}
+            </h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              {isPractice
+                ? 'Your practice answers are not scored. This will end the warm-up session.'
+                : 'This will submit your interview and generate your assessment report. You will not be able to add more answers afterwards.'}
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowFinishDialog(false)}
+                className="px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white rounded-xl transition hover:bg-[#18181c]"
+              >
+                Keep Going
+              </button>
+              <button
+                id="btn-confirm-finish"
+                onClick={handleConfirmFinish}
+                className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition shadow-md"
+              >
+                {isPractice ? 'End Practice' : 'End Interview'}
               </button>
             </div>
           </div>
